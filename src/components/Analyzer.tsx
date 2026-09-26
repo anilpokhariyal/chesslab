@@ -108,7 +108,7 @@ export function Analyzer() {
     scoreBefore: Score;
   } | null>(null);
   const lastTip = useRef<{ fen: string; bestMove: string; score: Score } | null>(null);
-  const playTimer = useRef<ReturnType<typeof setTimeout>>(0);
+  const playTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (tab === "chesscom") setUser(profile.chessCom);
