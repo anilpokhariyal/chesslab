@@ -35,6 +35,7 @@ function draftOf(g: Game & { notes: GameNote[] }): GameDraft {
     log: g.notes.map((x) => ({
       who: x.who === "bot" || x.who === "sys" ? x.who : "you",
       text: x.text,
+      ply: x.ply,
     })),
   };
 }
@@ -162,7 +163,7 @@ async function writeDraft(
       data: draft.log.map((n, i) => ({
         id: `${id}-n${i}`,
         gameId: id,
-        ply: i,
+        ply: n.ply ?? i,
         who: n.who.slice(0, 8),
         text: n.text,
         at: now,

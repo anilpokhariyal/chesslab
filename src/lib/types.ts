@@ -54,7 +54,7 @@ export type GameDraft = {
   pgn: string;
   status: string;
   mode?: "play" | "basics" | "full";
-  log?: { who: "you" | "bot" | "sys"; text: string }[];
+  log?: { who: "you" | "bot" | "sys"; text: string; san?: string; grade?: string; ply?: number }[];
 };
 
 export type PlayedGame = {

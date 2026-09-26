@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { classifyMove, faultCopy, GRADE_LABEL, moveAccuracy, nextGradePly } from "./classify.ts";
 
 assert.equal(GRADE_LABEL.book, "Book");
+assert.equal(GRADE_LABEL.brilliant, "Excellent");
 assert.equal(nextGradePly(["best", "blunder", "best"], 0, "blunder"), 2);
 assert.equal(nextGradePly(["best", "blunder"], 2, "blunder"), 2);
 assert.equal(nextGradePly(["best"], 0, "blunder"), null);

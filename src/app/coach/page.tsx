@@ -4,7 +4,7 @@ import { Chess } from "chess.js";
 import { useEffect, useRef, useState } from "react";
 import { Board } from "@/components/Board";
 import { evalPosition } from "@/lib/analyze";
-import { classifyMove, faultCopy } from "@/lib/classify";
+import { classifyMove, faultCopy, GRADE_GLYPH, type Grade } from "@/lib/classify";
 import { botPlan, sideCpl, type CoachMode } from "@/lib/coach";
 import { getEngine, normalizeUci, pvToSan, uciToSan } from "@/lib/engine";
 import { loadGame, outcome } from "@/lib/outcome";
@@ -29,6 +29,21 @@ function sameUci(a: string, b: string): boolean {
   return a.slice(0, 4) === b.slice(0, 4);
 }
 
+type Note = { who: "you" | "bot" | "sys"; text: string; san?: string; grade?: Grade; ply?: number };
+
+function fenAtPly(pgn: string, ply: number): string {
+  const g = loadGame(pgn);
+  while (g.history().length > ply) g.undo();
+  return g.fen();
+}
+
+function tone(grade?: Grade): string {
+  if (grade === "brilliant" || grade === "best" || grade === "good") return "ok";
+  if (grade === "inaccuracy") return "iffy";
+  if (grade === "mistake" || grade === "blunder") return "bad";
+  return "";
+}
+
 
 export default function Page() {
   const profile = useProfile();
@@ -40,7 +55,8 @@ export default function Page() {
   const [pgn, setPgn] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Pick a mode and start.");
-  const [log, setLog] = useState<{ who: "you" | "bot" | "sys"; text: string }[]>([]);
+  const [log, setLog] = useState<Note[]>([]);
+  const [review, setReview] = useState<string | null>(null);
   const lastEval = useRef<PositionEval | null>(null);
   const gen = useRef(0);
   const logRef = useRef(log);
@@ -54,16 +70,17 @@ export default function Page() {
     setFen(g.fen());
     setPgn(g.pgn());
     setStatus(d.status);
-    setLog(d.log ?? []);
-    logRef.current = d.log ?? [];
+    setLog((d.log ?? []) as Note[]);
+    logRef.current = (d.log ?? []) as Note[];
+    setReview(null);
     if (d.mode) setMode(d.mode);
     const lv = LEVELS.find((x) => x.name === d.opp || x.elo === d.elo);
     if (lv) setLevel(lv);
   }, [on, profile.coach]);
 
-  const push = (who: "you" | "bot" | "sys", text: string) =>
+  const push = (note: Note) =>
     setLog((xs) => {
-      const next = [...xs, { who, text }];
+      const next = [...xs, note];
       logRef.current = next;
       return next;
     });
@@ -92,19 +109,35 @@ export default function Page() {
     });
   };
 
-  const talkUser = async (fenBefore: string, fenAfter: string, san: string, color: "w" | "b", uci: string) => {
+  const talkUser = async (fenBefore: string, fenAfter: string, san: string, color: "w" | "b", uci: string, ply: number) => {
     if (mode === "play") return;
     const before =
       lastEval.current?.fen === fenBefore ? lastEval.current : await evalPosition(fenBefore, DEPTH);
     const after = await evalPosition(fenAfter, DEPTH);
     lastEval.current = after;
     const cpl = sideCpl(before.score, after.score, color);
-    if (mode === "basics" && cpl <= 50) return;
     const grade = classifyMove({ cpl, isBest: sameUci(uci, before.bestMove), isSacrifice: false });
+    if (mode === "basics" && grade === "good") return;
+    const best = uciToSan(fenBefore, before.bestMove);
+    if (grade === "best" || grade === "brilliant" || grade === "good") {
+      push({
+        who: "you",
+        san,
+        grade,
+        ply,
+        text:
+          grade === "brilliant"
+            ? `Excellent. ${san} is a sharp find.`
+            : grade === "best"
+              ? `Best. ${san} matches the engine.`
+              : `Good. ${san} is solid.${best && best !== san ? ` Engine likes ${best} a bit more.` : ""}`,
+      });
+      return;
+    }
     const punish = after.bestMove ? uciToSan(fenAfter, after.bestMove) : "";
     const idea = after.pvs[0] ? pvToSan(fenAfter, after.pvs[0].moves).split(/\s+/).slice(1).join(" ") : "";
-    const f = faultCopy(san, uciToSan(fenBefore, before.bestMove), grade, cpl, punish, idea);
-    push("you", `${f.title}. ${f.why} ${f.punish}`);
+    const f = faultCopy(san, best, grade, cpl, punish, idea);
+    push({ who: "you", san, grade, ply, text: `${f.title}. ${f.why} ${f.punish}` });
   };
 
   const engineMove = async (g: Chess, elo: number, id: number) => {
@@ -143,7 +176,7 @@ export default function Page() {
     if (san && mode === "full") {
       const line = lastEval.current?.pvs[0] ? pvToSan(g.fen(), lastEval.current.pvs[0].moves) : "";
       const best = before?.bestMove ? uciToSan(fenBefore, before.bestMove) : "";
-      push("bot", botPlan(san, best, line));
+      push({ who: "bot", san, ply: g.history().length, text: botPlan(san, best, line) });
     }
     const o = outcome(g.fen(), g.pgn());
     const text = o?.text ?? `vs ${level.name} · ${MODES.find((m) => m.id === mode)?.label}`;
@@ -160,6 +193,7 @@ export default function Page() {
     setFen(g.fen());
     setPgn("");
     setLog([]);
+    setReview(null);
     setStatus(`vs ${level.name} · ${MODES.find((m) => m.id === mode)?.label}`);
     setBusy(true);
     if (mode !== "play") {
@@ -188,12 +222,13 @@ export default function Page() {
     if (!mv) return false;
     setFen(g.fen());
     setPgn(g.pgn());
+    setReview(null);
     const id = gen.current;
     const uci = `${from}${to}${promotion ?? ""}`;
     void (async () => {
       setBusy(true);
       try {
-        await talkUser(fenBefore, g.fen(), mv.san, mv.color, uci);
+        await talkUser(fenBefore, g.fen(), mv.san, mv.color, uci, g.history().length);
       } catch {
         /* keep playing */
       }
@@ -252,7 +287,7 @@ export default function Page() {
           </div>
         </>
       ) : (
-        <div className="grid-2">
+        <div className="grid-2 fill">
           <section>
             <div className="row" style={{ marginBottom: 8 }}>
               <button
@@ -266,6 +301,7 @@ export default function Page() {
                   setPgn("");
                   setLog([]);
                   logRef.current = [];
+                  setReview(null);
                   lastEval.current = null;
                   setStatus("Pick a mode and start.");
                 }}
@@ -275,7 +311,15 @@ export default function Page() {
               <span>{status}</span>
               {busy && <span className="muted">thinking…</span>}
             </div>
-            <Board fen={fen} pgn={pgn} flipped={side === "b"} onDrop={onDrop} allowDrag={!busy} announce />
+            <Board
+              fen={review ?? fen}
+              pgn={review ? undefined : pgn}
+              flipped={side === "b"}
+              onDrop={onDrop}
+              allowDrag={!busy && !review}
+              announce
+            />
+            {review && <p className="muted" style={{ marginTop: 6 }}>Reviewing a note. Click another, or play to return.</p>}
           </section>
           <section className="panel">
             <h2>Notes</h2>
@@ -284,11 +328,24 @@ export default function Page() {
             ) : (
               <div className="chat" style={{ marginTop: 8 }}>
                 {log.length === 0 && <p className="muted">Moves will show up here.</p>}
-                {log.map((m, i) => (
-                  <div key={i} className={`bubble ${m.who === "you" ? "me" : ""}`}>
-                    {m.text}
-                  </div>
-                ))}
+                {[...log].reverse().map((m, i) => {
+                  const at = m.ply != null && pgn ? fenAtPly(pgn, m.ply) : "";
+                  return (
+                    <button
+                      key={`${m.ply ?? 0}-${i}`}
+                      type="button"
+                      className={`bubble ${tone(m.grade)}${review && at && review === at ? " on" : ""}`}
+                      disabled={m.ply == null || !pgn}
+                      onClick={() => m.ply != null && setReview(fenAtPly(pgn, m.ply))}
+                    >
+                      <span className={`san ${m.grade ? `grade ${m.grade}` : ""}`}>
+                        {m.san ?? "—"}
+                        {m.grade && GRADE_GLYPH[m.grade] ? ` ${GRADE_GLYPH[m.grade]}` : ""}
+                      </span>
+                      <span>{m.text}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </section>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/app/auth-actions";
 import { Logo } from "@/components/Logo";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { hydrateCloud, setCloudSync, useProfile } from "@/lib/store";
 
 type User = { id: string; name: string; email: string };
@@ -24,14 +24,27 @@ const train = [
 export function Nav({ user }: { user: User | null }) {
   const path = usePathname();
   const profile = useProfile();
+  const bar = useRef<HTMLElement>(null);
+  const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
     setCloudSync(!!user);
     if (user) void hydrateCloud();
   }, [user]);
 
+  useEffect(() => setOpen(null), [path]);
+
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!bar.current?.querySelector(".drop.on")?.contains(t)) setOpen(null);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, []);
+
   return (
-    <nav className="nav">
+    <nav className="nav" ref={bar}>
       <Link href="/" className="brand-link">
         <Logo />
       </Link>
@@ -45,22 +58,32 @@ export function Nav({ user }: { user: User | null }) {
         <Link className={path.startsWith("/dashboard") ? "active" : ""} href="/dashboard">
           Dashboard
         </Link>
-        <details className="drop">
-          <summary>Train</summary>
-          <div className="drop-menu">
-            {train.map(([href, label]) => (
-              <Link key={href} href={href}>
-                {label}
+        <div className={`drop${open === "train" ? " on" : ""}`}>
+          <button type="button" className="linkish" onClick={() => setOpen((v) => (v === "train" ? null : "train"))}>
+            Train
+          </button>
+          {open === "train" && (
+            <div className="drop-menu">
+              {train.map(([href, label]) => (
+                <Link key={href} href={href} onClick={() => setOpen(null)}>
+                  {label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className={`drop${open === "compete" ? " on" : ""}`}>
+          <button type="button" className="linkish" onClick={() => setOpen((v) => (v === "compete" ? null : "compete"))}>
+            Compete
+          </button>
+          {open === "compete" && (
+            <div className="drop-menu">
+              <Link href="/leaderboard" onClick={() => setOpen(null)}>
+                Puzzle stats
               </Link>
-            ))}
-          </div>
-        </details>
-        <details className="drop">
-          <summary>Compete</summary>
-          <div className="drop-menu">
-            <Link href="/leaderboard">Puzzle stats</Link>
-          </div>
-        </details>
+            </div>
+          )}
+        </div>
         <Link href="/pricing">Pricing</Link>
         <Link href="/about">About</Link>
       </div>

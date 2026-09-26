@@ -58,7 +58,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .brand-rest { color: var(--accent-2); }
 .nav-links { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
-.nav a, .nav button.linkish, .drop > summary {
+.nav a, .nav button.linkish {
   padding: 6px 10px;
   border-radius: 6px;
   color: var(--muted);
@@ -67,25 +67,24 @@ button, input, select, textarea { font: inherit; color: inherit; }
   cursor: pointer;
   list-style: none;
 }
-.nav a:hover, .nav button.linkish:hover, .drop > summary:hover, .nav a.active {
+.nav a:hover, .nav button.linkish:hover, .nav a.active {
   color: var(--text);
   background: #243042;
 }
 .drop { position: relative; }
-.drop > summary::-webkit-details-marker { display: none; }
 .drop-menu {
   position: absolute;
   top: 100%;
   left: 0;
+  z-index: 30;
   min-width: 200px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 6px;
-  display: none;
+  display: flex;
   flex-direction: column;
 }
-.drop[open] .drop-menu { display: flex; }
 .drop-menu a { padding: 8px 10px; border-radius: 6px; color: var(--text); }
 .nav-right { display: flex; gap: 8px; align-items: center; }
 .btn {
@@ -100,15 +99,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-ghost { background: transparent; }
-.main { flex: 1; padding: 16px; max-width: 1280px; width: 100%; margin: 0 auto; }
+.main { flex: 1; padding: 16px; max-width: 1280px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; }
 .page-title { font-size: 1.4rem; margin-bottom: 8px; }
 .lede { color: var(--muted); margin-bottom: 16px; }
 
 .grid-2 { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr); gap: 16px; }
+.grid-2.fill { flex: 1; min-height: 0; align-items: stretch; }
 .grid-3 { display: grid; grid-template-columns: 1fr 1.1fr 0.9fr; gap: 16px; }
 @media (max-width: 980px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .grid-2.fill { grid-template-rows: auto 1fr; }
 }
+.grid-2.fill > .panel { display: flex; flex-direction: column; min-height: 0; }
 
 .panel {
   background: var(--panel);
@@ -182,6 +184,8 @@ textarea, input[type="text"], input[type="number"], input[type="email"], input[t
 }
 textarea { min-height: 120px; resize: vertical; font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; }
 
+.glyphs { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; margin: 6px 0 8px; }
+.glyphs span { white-space: nowrap; }
 .moves { display: grid; grid-template-columns: auto 1fr 1fr; gap: 2px 6px; font-size: 13px; max-height: 280px; overflow: auto; }
 .moves.scored { grid-template-columns: auto max-content auto max-content auto; justify-content: start; }
 .moves button { background: none; border: 0; text-align: left; padding: 2px 4px; border-radius: 4px; cursor: pointer; color: var(--text); }
@@ -213,6 +217,10 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--font-mono), u
 .game-list button { text-align: left; }
 
 dialog.ask {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--line);
@@ -227,14 +235,23 @@ dialog.ask h2 { font-size: 1.15rem; margin-bottom: 8px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
 .card h3 { font-size: 1.05rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+.tile b { display: block; font-size: 1.7rem; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.tile span { color: var(--muted); font-size: 0.85rem; }
 .muted { color: var(--muted); font-size: 0.9rem; }
 .price { font-size: 1.8rem; font-weight: 700; }
 .skill { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
 .skill .bar { flex: 1; height: 8px; background: #121820; border-radius: 99px; overflow: hidden; }
 .skill .bar > i { display: block; height: 100%; background: var(--accent); }
-.chat { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow: auto; }
-.bubble { padding: 8px 10px; border-radius: 8px; background: #121820; }
-.bubble.me { background: #243a30; }
+.chat { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; overflow: auto; }
+.bubble { display: grid; grid-template-columns: 10% 1fr; gap: 8px; padding: 8px 10px; border-radius: 8px; background: #121820; text-align: left; border: 0; width: 100%; color: inherit; font: inherit; }
+.bubble .san { font-weight: 700; }
+.bubble.bad { background: color-mix(in oklab, var(--danger) 18%, var(--panel)); }
+.bubble.ok { background: color-mix(in oklab, var(--good) 18%, var(--panel)); }
+.bubble.iffy { background: color-mix(in oklab, var(--warn) 16%, var(--panel)); }
+.bubble.on { outline: 1px solid var(--accent); }
+.bubble[disabled] { cursor: default; }
 
 .progress { height: 6px; background: #121820; border-radius: 99px; overflow: hidden; }
 .progress > i { display: block; height: 100%; background: var(--accent); }

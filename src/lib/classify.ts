@@ -35,7 +35,7 @@ export function mean(xs: number[]): number {
 
 export const GRADE_LABEL: Record<Grade, string> = {
   book: "Book",
-  brilliant: "Brilliant",
+  brilliant: "Excellent",
   best: "Best",
   good: "Good",
   inaccuracy: "Inaccuracy",

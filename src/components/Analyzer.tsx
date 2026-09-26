@@ -108,6 +108,7 @@ export function Analyzer() {
     scoreBefore: Score;
   } | null>(null);
   const lastTip = useRef<{ fen: string; bestMove: string; score: Score } | null>(null);
+  const playTimer = useRef<ReturnType<typeof setTimeout>>(0);
 
   useEffect(() => {
     if (tab === "chesscom") setUser(profile.chessCom);
@@ -188,7 +189,7 @@ export function Analyzer() {
     }
   };
 
-  const goPly = (n: number) => {
+  const goPly = (n: number, play = false) => {
     const g = new Chess();
     try {
       if (pgn) g.loadPgn(pgn);
@@ -197,15 +198,22 @@ export function Analyzer() {
       /* */
     }
     const max = g.history().length + history.length;
-    setPly(Math.max(0, Math.min(max, n)));
+    const target = Math.max(0, Math.min(max, n));
+    clearTimeout(playTimer.current);
     setFault(null);
     pendingFault.current = null;
     setWaitingFault(false);
+    if (play && target > 0) {
+      setPly(target - 1);
+      playTimer.current = setTimeout(() => setPly(target), 120);
+      return;
+    }
+    setPly(target);
   };
 
   const jumpGrade = (grade: Grade) => {
     const next = analysis ? nextGradePly(analysis.moves.map((m) => m.grade), ply, grade) : null;
-    if (next) goPly(next);
+    if (next) goPly(next, true);
   };
 
   const onDrop = (from: string, to: string, promotion?: "q" | "r" | "b" | "n") => {
@@ -549,10 +557,18 @@ export function Analyzer() {
           {err && <p className="grade blunder" style={{ marginTop: 8 }}>{err}</p>}
 
           <h2 style={{ marginTop: 16 }}>Moves</h2>
+          <p className="muted glyphs">
+            {GRADE_ORDER.filter((g) => GRADE_GLYPH[g]).map((g) => (
+              <span key={g} title={GRADE_LABEL[g]}>
+                <span className={`grade ${g}`}>{GRADE_GLYPH[g]}</span>
+                {GRADE_GLYPH[g] !== GRADE_LABEL[g] ? ` ${GRADE_LABEL[g]}` : ""}
+              </span>
+            ))}
+          </p>
           {analysis && (
             <div className="row" style={{ margin: "8px 0", flexWrap: "wrap" }}>
               {GRADE_ORDER.filter((g) => counts[g]).map((g) => (
-                <button key={g} className={`btn grade ${g}`} onClick={() => jumpGrade(g)}>
+                <button key={g} className={`btn grade ${g}`} onClick={() => jumpGrade(g)} title={GRADE_LABEL[g]}>
                   {counts[g]} {GRADE_LABEL[g]}
                 </button>
               ))}
@@ -569,11 +585,20 @@ export function Analyzer() {
               return (
                 <span key={i} style={{ display: "contents" }}>
                   <span className="muted">{i + 1}.</span>
-                  <button className={ply === i * 2 + 1 ? "on" : ""} onClick={() => goPly(i * 2 + 1)}>
+                  <button
+                    className={ply === i * 2 + 1 ? "on" : ""}
+                    title={wg ? GRADE_LABEL[wg.grade] : undefined}
+                    onClick={() => goPly(i * 2 + 1, true)}
+                  >
                     {w} {wg && GRADE_GLYPH[wg.grade] ? <span className={`grade ${wg.grade}`}>{GRADE_GLYPH[wg.grade]}</span> : null}
                   </button>
                   {analysis ? movePts(wg, prevW) : null}
-                  <button className={ply === i * 2 + 2 ? "on" : ""} onClick={() => goPly(i * 2 + 2)} disabled={!b}>
+                  <button
+                    className={ply === i * 2 + 2 ? "on" : ""}
+                    title={bg ? GRADE_LABEL[bg.grade] : undefined}
+                    onClick={() => goPly(i * 2 + 2, true)}
+                    disabled={!b}
+                  >
                     {b} {bg && GRADE_GLYPH[bg.grade] ? <span className={`grade ${bg.grade}`}>{GRADE_GLYPH[bg.grade]}</span> : null}
                   </button>
                   {analysis ? movePts(bg, prevB) : null}
@@ -646,7 +671,7 @@ export function Analyzer() {
           {analysis ? (
             <div className="row" style={{ flexWrap: "wrap" }}>
               {GRADE_ORDER.filter((g) => counts[g]).map((g) => (
-                <button key={g} className={`btn grade ${g}`} onClick={() => jumpGrade(g)}>
+                <button key={g} className={`btn grade ${g}`} title={GRADE_LABEL[g]} onClick={() => jumpGrade(g)}>
                   {counts[g]} {GRADE_LABEL[g]}
                 </button>
               ))}
