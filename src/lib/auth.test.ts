@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { checkPass, hashOtp, hashPass, makeToken, otpMatch, readToken } from "./auth.ts";
 
-process.env.AUTH_SECRET = "test-secret-test-secret-test-secret";
+process.env.AUTH_SECRET = "x".repeat(32);
 
 const stored = hashPass("hunter22");
 assert.equal(checkPass("hunter22", stored), true);
