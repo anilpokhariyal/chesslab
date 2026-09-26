@@ -1,0 +1,148 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  free
+  premium
+  coach
+}
+
+enum GameKind {
+  play
+  coach
+  analyze
+}
+
+enum GameStatus {
+  active
+  finished
+  abandoned
+}
+
+enum Side {
+  w
+  b
+}
+
+model User {
+  id       String     @id @db.Char(32)
+  name     String     @db.VarChar(40)
+  email    String     @unique @db.VarChar(255)
+  pass     String     @db.VarChar(128)
+  created  BigInt
+  verified Boolean    @default(false)
+  otpHash  String?    @map("otp_hash") @db.Char(64)
+  otpExp   BigInt?    @map("otp_exp")
+  otpSent  BigInt?    @map("otp_sent")
+  profile  Profile?
+  games    Game[]
+  analyses Analysis[]
+
+  @@map("users")
+}
+
+model Profile {
+  userId         String @id @map("user_id") @db.Char(32)
+  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan           Plan   @default(free)
+  puzzleRating   Int    @default(1200) @map("puzzle_rating")
+  streak         Int    @default(0)
+  solved         Int    @default(0)
+  failed         Int    @default(0)
+  bestStreak     Int    @default(0) @map("best_streak")
+  theme          String @default("default") @db.VarChar(32)
+  sounds         Json
+  coordBest      Int    @default(0) @map("coord_best")
+  lastAnalysisId String? @map("last_analysis_id") @db.VarChar(40)
+  openings       Json
+  chessCom       String  @default("") @map("chess_com") @db.VarChar(64)
+  lichess        String  @default("") @db.VarChar(64)
+
+  @@map("profiles")
+}
+
+model Game {
+  id        String     @id @db.VarChar(40)
+  userId    String     @map("user_id") @db.Char(32)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      GameKind
+  status    GameStatus @default(active)
+  opp       String     @db.VarChar(80)
+  elo       Int        @default(0)
+  side      Side       @default(w)
+  fen       String     @db.VarChar(128)
+  pgn       String     @db.MediumText
+  result    String     @db.VarChar(80)
+  mode      String?    @db.VarChar(16)
+  startedAt BigInt     @map("started_at")
+  updatedAt BigInt     @map("updated_at")
+  notes     GameNote[]
+  analysis  Analysis?
+
+  @@index([userId, kind, status])
+  @@index([userId, startedAt])
+  @@map("games")
+}
+
+model GameNote {
+  id     String @id @db.VarChar(40)
+  gameId String @map("game_id") @db.VarChar(40)
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  ply    Int    @default(0)
+  who    String @db.VarChar(8)
+  text   String @db.Text
+  at     BigInt
+
+  @@index([gameId, ply])
+  @@map("game_notes")
+}
+
+model Analysis {
+  id            String         @id @db.VarChar(40)
+  userId        String         @map("user_id") @db.Char(32)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameId        String?        @unique @map("game_id") @db.VarChar(40)
+  game          Game?          @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  at            BigInt
+  white         String         @db.VarChar(64)
+  black         String         @db.VarChar(64)
+  result        String         @db.VarChar(16)
+  pgn           String         @db.MediumText
+  opening       String?        @db.VarChar(128)
+  whiteAccuracy Float          @map("white_accuracy")
+  blackAccuracy Float          @map("black_accuracy")
+  whiteAcpl     Float          @map("white_acpl")
+  blackAcpl     Float          @map("black_acpl")
+  moves         AnalysisMove[]
+
+  @@index([userId, at])
+  @@map("analyses")
+}
+
+model AnalysisMove {
+  id         String   @id @db.VarChar(40)
+  analysisId String   @map("analysis_id") @db.VarChar(40)
+  analysis   Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  ply        Int
+  san        String   @db.VarChar(16)
+  uci        String   @db.VarChar(8)
+  fenBefore  String   @map("fen_before") @db.VarChar(128)
+  fenAfter   String   @map("fen_after") @db.VarChar(128)
+  color      Side
+  cpl        Int
+  grade      String   @db.VarChar(16)
+  bestSan    String   @map("best_san") @db.VarChar(16)
+  bestUci    String   @map("best_uci") @db.VarChar(8)
+  evalBefore Json     @map("eval_before")
+  evalAfter  Json     @map("eval_after")
+
+  @@unique([analysisId, ply])
+  @@map("analysis_moves")
+}

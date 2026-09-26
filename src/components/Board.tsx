@@ -11,6 +11,7 @@ import type { Arrow, PieceDropHandlerArgs } from "react-chessboard";
 
 type Props = {
   fen: string;
+  pgn?: string;
   flipped?: boolean;
   arrows?: Arrow[];
   allowDrag?: boolean;
@@ -33,6 +34,7 @@ function subscribe() {
 
 export function Board({
   fen,
+  pgn,
   flipped,
   arrows,
   allowDrag = true,
@@ -60,12 +62,12 @@ export function Board({
     }
     if (seen.current === fen) return;
     seen.current = fen;
-    const o = outcome(fen);
+    const o = outcome(fen, pgn);
     setFlash(o);
     if (o?.kind !== "check") return;
     const t = setTimeout(() => setFlash((f) => (f?.kind === "check" ? null : f)), 1600);
     return () => clearTimeout(t);
-  }, [announce, fen]);
+  }, [announce, fen, pgn]);
   const lastFen = useRef<string | null>(null);
   useEffect(() => {
     if (lastFen.current === null) {
@@ -74,9 +76,9 @@ export function Board({
     }
     const prev = lastFen.current;
     lastFen.current = fen;
-    const kind = whichSound(prev, fen, { ...DEFAULT_SOUNDS, ...profile.sounds }, outcome(fen));
+    const kind = whichSound(prev, fen, { ...DEFAULT_SOUNDS, ...profile.sounds }, outcome(fen, pgn));
     if (kind) playSound(kind, profile.sounds?.volume ?? DEFAULT_SOUNDS.volume);
-  }, [fen, profile.sounds]);
+  }, [fen, pgn, profile.sounds]);
   useEffect(() => {
     setPick(null);
   }, [fen]);

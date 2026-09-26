@@ -46,6 +46,28 @@ export type SavedAnalysis = {
   blackAcpl: number;
 };
 
+export type GameDraft = {
+  opp: string;
+  elo: number;
+  side: "w" | "b";
+  fen: string;
+  pgn: string;
+  status: string;
+  mode?: "play" | "basics" | "full";
+  log?: { who: "you" | "bot" | "sys"; text: string }[];
+};
+
+export type PlayedGame = {
+  id: string;
+  at: number;
+  kind: "play" | "coach";
+  pgn: string;
+  result: string;
+  opp: string;
+};
+
+export type OpeningProgress = { ch: number; ply: number };
+
 export type Profile = {
   name: string;
   plan: Plan;
@@ -58,4 +80,11 @@ export type Profile = {
   sounds: SoundPrefs;
   analyses: SavedAnalysis[];
   lastAnalysisId: string | null;
+  games: PlayedGame[];
+  play: GameDraft | null;
+  coach: GameDraft | null;
+  openings: Record<string, OpeningProgress>;
+  coordBest: number;
+  chessCom: string;
+  lichess: string;
 };

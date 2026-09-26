@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Board } from "@/components/Board";
+import { patchProfile, useProfile } from "@/lib/store";
 
 const FILES = "abcdefgh";
 
@@ -10,10 +11,12 @@ function randSq(): string {
 }
 
 export default function Page() {
+  const best = useProfile().coordBest;
   const [target, setTarget] = useState("e4");
   const [score, setScore] = useState(0);
   const [left, setLeft] = useState(0);
   const [running, setRunning] = useState(false);
+  const scoreRef = useRef(0);
 
   useEffect(() => {
     if (!running) return;
@@ -21,6 +24,7 @@ export default function Page() {
       setLeft((n) => {
         if (n <= 1) {
           setRunning(false);
+          patchProfile((p) => ({ ...p, coordBest: Math.max(p.coordBest, scoreRef.current) }));
           return 0;
         }
         return n - 1;
@@ -30,6 +34,7 @@ export default function Page() {
   }, [running]);
 
   const start = () => {
+    scoreRef.current = 0;
     setScore(0);
     setLeft(30);
     setRunning(true);
@@ -46,6 +51,7 @@ export default function Page() {
         </button>
         <strong style={{ fontSize: 28 }}>{target}</strong>
         <span>Score {score}</span>
+        <span className="muted">Best {best}</span>
         <span>{left}s</span>
       </div>
       <Board
@@ -54,7 +60,8 @@ export default function Page() {
         onSquareClick={(sq) => {
           if (!running) return;
           if (sq === target) {
-            setScore((s) => s + 1);
+            scoreRef.current += 1;
+            setScore(scoreRef.current);
             setTarget(randSq());
           }
         }}

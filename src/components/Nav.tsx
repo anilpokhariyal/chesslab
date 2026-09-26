@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/app/auth-actions";
 import { Logo } from "@/components/Logo";
-import { useProfile } from "@/lib/store";
+import { useEffect } from "react";
+import { hydrateCloud, setCloudSync, useProfile } from "@/lib/store";
 
 type User = { id: string; name: string; email: string };
 
@@ -23,6 +24,11 @@ const train = [
 export function Nav({ user }: { user: User | null }) {
   const path = usePathname();
   const profile = useProfile();
+
+  useEffect(() => {
+    setCloudSync(!!user);
+    if (user) void hydrateCloud();
+  }, [user]);
 
   return (
     <nav className="nav">

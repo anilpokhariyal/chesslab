@@ -1,49 +1,85 @@
 import { useSyncExternalStore } from "react";
-import { DEFAULT_SOUNDS } from "./sound";
+import { DEFAULT_PROFILE, isFreshProfile, parseProfile } from "./profile";
 import { themeById } from "./themes";
-import type { Plan, Profile, SavedAnalysis } from "./types";
+import type { GameDraft, Plan, PlayedGame, Profile, SavedAnalysis } from "./types";
+
+export { DEFAULT_PROFILE, isFreshProfile, parseProfile };
 
 const KEY = "chesslab-profile";
 
-export const DEFAULT_PROFILE: Profile = {
-  name: "",
-  plan: "free",
-  puzzleRating: 1200,
-  streak: 0,
-  solved: 0,
-  failed: 0,
-  bestStreak: 0,
-  theme: "default",
-  sounds: DEFAULT_SOUNDS,
-  analyses: [],
-  lastAnalysisId: null,
-};
-
-function readProfile(raw: string): Profile {
+function readLocal(raw: string): Profile {
   try {
-    const p = JSON.parse(raw) as Partial<Profile>;
-    return { ...DEFAULT_PROFILE, ...p, sounds: { ...DEFAULT_SOUNDS, ...p.sounds } };
+    return parseProfile(JSON.parse(raw) as unknown);
   } catch {
     return { ...DEFAULT_PROFILE };
   }
 }
 
 export function loadProfile(): Profile {
-  if (typeof window === "undefined") return DEFAULT_PROFILE;
+  if (typeof window === "undefined") return { ...DEFAULT_PROFILE };
   const raw = localStorage.getItem(KEY);
-  return raw ? readProfile(raw) : { ...DEFAULT_PROFILE };
+  return raw ? readLocal(raw) : { ...DEFAULT_PROFILE };
 }
 
-export function saveProfile(p: Profile): void {
+function writeLocal(p: Profile): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(KEY, JSON.stringify(p));
   window.dispatchEvent(new Event("chesslab-profile"));
+}
+
+let cloud = false;
+let timer: ReturnType<typeof setTimeout> | null = null;
+
+export function setCloudSync(on: boolean): void {
+  cloud = on;
+}
+
+function pushCloud(p: Profile): void {
+  if (!cloud || typeof window === "undefined") return;
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(() => {
+    void fetch("/api/me", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(p),
+    });
+  }, 400);
+}
+
+export function saveProfile(p: Profile): void {
+  writeLocal(p);
+  pushCloud(p);
 }
 
 export function patchProfile(fn: (p: Profile) => Profile): Profile {
   const next = fn(loadProfile());
   saveProfile(next);
   return next;
+}
+
+export async function hydrateCloud(): Promise<void> {
+  const res = await fetch("/api/me");
+  if (!res.ok) return;
+  const server = parseProfile(await res.json());
+  const local = loadProfile();
+  if (isFreshProfile(server) && !isFreshProfile(local)) {
+    writeLocal({ ...local, name: local.name || server.name });
+    pushCloud(loadProfile());
+    return;
+  }
+  writeLocal({ ...server, name: server.name || local.name });
+}
+
+export function rememberDraft(kind: "play" | "coach", draft: GameDraft | null): void {
+  patchProfile((p) => ({ ...p, [kind]: draft }));
+}
+
+export function recordGame(g: PlayedGame): void {
+  patchProfile((p) => ({
+    ...p,
+    [g.kind]: null,
+    games: [g, ...p.games.filter((x) => x.id !== g.id)].slice(0, 40),
+  }));
 }
 
 export function depthFor(plan: Plan): number {
@@ -76,7 +112,7 @@ export function useProfile(): Profile {
     () => "",
   );
   if (!raw) return DEFAULT_PROFILE;
-  return readProfile(raw);
+  return readLocal(raw);
 }
 
 export function updateRating(rating: number, puzzleRating: number, win: boolean): number {

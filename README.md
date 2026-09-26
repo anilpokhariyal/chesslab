@@ -1,36 +1,134 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ChessLab
 
-## Getting Started
+Local-first chess site: analyze PGN / Chess.com / Lichess games with Stockfish in the browser, train puzzles and openings, play bots, and use a coaching bot. Accounts, games, and progress live in MySQL (Prisma).
 
-First, run the development server:
+Live image (optional): [`anilpokhariya/chesslab`](https://hub.docker.com/r/anilpokhariya/chesslab)  
+Source: https://github.com/anilpokhariyal/chesslab
+
+## Requirements
+
+- Node.js 22+
+- npm
+- MySQL 8 (easiest: Docker)
+
+Analyzer, puzzles, and bots work without an account. Sign-up needs MySQL. Email OTP needs SMTP; without it the code is written to `data/last-email.txt`.
+
+Short checklist: [SETUP.md](./SETUP.md).
+
+## Setup (local)
+
+```bash
+git clone https://github.com/anilpokhariyal/chesslab.git
+cd chesslab
+npm install
+```
+
+`npm install` generates the Prisma client and copies Stockfish WASM into `public/stockfish/`.
+
+### 1. MySQL
+
+```bash
+docker compose up -d mysql
+```
+
+That starts MySQL 8.4 on `127.0.0.1:3306` as user/password/database `chesslab` / `chesslab` / `chesslab`.
+
+### 2. Env
+
+```bash
+cp .env.example .env.local
+```
+
+For local work set:
+
+```
+APP_URL=http://localhost:3000
+DATABASE_URL=mysql://chesslab:chesslab@127.0.0.1:3306/chesslab
+MYSQL_URL=mysql://chesslab:chesslab@127.0.0.1:3306/chesslab
+AUTH_SECRET=     # optional locally; a file is created under data/.secret
+```
+
+Leave SMTP blank to skip real email.
+
+### 3. Schema
+
+```bash
+npx prisma db push
+```
+
+Creates `users`, `profiles`, `games`, `game_notes`, `analyses`, `analysis_moves`.
+
+### 4. Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run check    # unit checks
+npm run build    # production build
+npm start        # serve that build (still needs DATABASE_URL)
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment
 
-## Learn More
+| Variable | Required | Notes |
+|---|---|---|
+| `DATABASE_URL` | Yes (accounts) | Prisma. `mysql://user:pass@host:3306/chesslab` |
+| `MYSQL_URL` | Fallback | Used if `DATABASE_URL` is unset |
+| `APP_URL` | Prod | Public origin for SEO, OTP links, cookies |
+| `AUTH_SECRET` | Prod | `openssl rand -hex 32` |
+| `APP_NAME` | No | Default ChessLab |
+| `SMTP_HOST` `SMTP_USER` `SMTP_PASS` | For real OTP | Gmail: smtp.gmail.com, port 587, App Password |
+| `SMTP_FROM` `SMTP_FROM_NAME` | With SMTP | From address and name |
+| `SMTP_PORT` `SMTP_SECURE` | No | 587 / false by default |
+| `OTP_MINUTES` | No | Default 10 |
 
-To learn more about Next.js, take a look at the following resources:
+Do not commit `.env.local` or `/data`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Docker (full stack)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Sibling `.env` next to `docker-compose.yml` (not committed):
 
-## Deploy on Vercel
+```
+AUTH_SECRET=your-hex-secret
+MYSQL_PASSWORD=chesslab
+SMTP_HOST=smtp.gmail.com
+SMTP_USER=you@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=you@gmail.com
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Then:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+docker compose up -d
+```
+
+App on http://localhost:3000, MySQL on 3306. Pull `anilpokhariya/chesslab:latest` or build:
+
+```bash
+docker build --platform linux/amd64 -t anilpokhariya/chesslab:latest .
+docker compose up -d
+```
+
+The image does not run migrations. After MySQL is healthy:
+
+```bash
+export DATABASE_URL=mysql://chesslab:chesslab@127.0.0.1:3306/chesslab
+npx prisma db push
+```
+
+After a schema change, `db push` again and rebuild the image.
+
+## What runs where
+
+- **Browser:** Stockfish, board, puzzles, play, coach
+- **Server:** accounts, OTP, profile, games, analyses, Chess.com/Lichess proxies
+- **MySQL:** users + progress (not PGN uploads of guests)
+
+## License
+
+App code is yours in this repo. Stockfish is GPL-3.0 (WASM copy in `public/stockfish/`). Puzzles and opening names come from public Lichess APIs.

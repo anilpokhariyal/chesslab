@@ -1,20 +1,16 @@
 import { createHmac, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { Profile } from "./types";
 
 export const COOKIE = "chesslab";
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export type PublicUser = { id: string; name: string; email: string; verified: boolean };
-type User = PublicUser & { pass: string; created: number; otpHash?: string; otpExp?: number; otpSent?: number };
 
 function dataDir(): string {
   return join(process.cwd(), "data");
-}
-
-function usersPath(): string {
-  return join(dataDir(), "users.json");
 }
 
 export function secret(): string {
@@ -62,25 +58,8 @@ export function readToken(token: string, now = Date.now()): string | null {
   }
 }
 
-function loadUsers(): User[] {
-  if (!existsSync(usersPath())) return [];
-  try {
-    const raw = JSON.parse(readFileSync(usersPath(), "utf8")) as User[];
-    return Array.isArray(raw) ? raw : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveUsers(users: User[]): void {
-  mkdirSync(dataDir(), { recursive: true });
-  const tmp = `${usersPath()}.tmp`;
-  writeFileSync(tmp, JSON.stringify(users));
-  renameSync(tmp, usersPath());
-}
-
-function publicUser(u: User): PublicUser {
-  return { id: u.id, name: u.name, email: u.email, verified: u.verified !== false };
+function publicUser(u: { id: string; name: string; email: string; verified: boolean }): PublicUser {
+  return { id: u.id, name: u.name, email: u.email, verified: u.verified };
 }
 
 export function hashOtp(code: string): string {
@@ -93,76 +72,100 @@ export function otpMatch(code: string, hash: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function mutate(email: string, fn: (u: User) => void): User {
-  const users = loadUsers();
-  const u = users.find((x) => x.email === email.trim().toLowerCase());
-  if (!u) throw new Error("No account with that email.");
-  fn(u);
-  saveUsers(users);
-  return u;
+async function db() {
+  return (await import("./prisma")).ready();
 }
 
-export function findUser(id: string): PublicUser | null {
-  const u = loadUsers().find((x) => x.id === id);
+export async function findUser(id: string): Promise<PublicUser | null> {
+  const u = await (await db()).user.findUnique({ where: { id } });
   return u ? publicUser(u) : null;
 }
 
-export function createUser(name: string, email: string, password: string): PublicUser {
+export async function createUser(name: string, email: string, password: string): Promise<PublicUser> {
   const n = name.trim();
   const e = email.trim().toLowerCase();
   if (!n || n.length > 40) throw new Error("Enter a name (max 40 characters).");
   if (!EMAIL.test(e)) throw new Error("Enter a valid email.");
   if (password.length < 8) throw new Error("Password must be at least 8 characters.");
-  const users = loadUsers();
-  if (users.some((u) => u.email === e)) throw new Error("That email is already registered.");
-  const user: User = {
-    id: randomBytes(16).toString("hex"),
-    name: n,
-    email: e,
-    pass: hashPass(password),
-    created: Date.now(),
-    verified: false,
-  };
-  users.push(user);
-  saveUsers(users);
-  return publicUser(user);
+  const id = randomBytes(16).toString("hex");
+  try {
+    const { DEFAULT_PROFILE } = await import("./profile");
+    const u = await (
+      await db()
+    ).user.create({
+      data: {
+        id,
+        name: n,
+        email: e,
+        pass: hashPass(password),
+        created: BigInt(Date.now()),
+        verified: false,
+        profile: {
+          create: {
+            sounds: DEFAULT_PROFILE.sounds,
+            openings: {},
+          },
+        },
+      },
+    });
+    return publicUser(u);
+  } catch (err) {
+    const { Prisma } = await import("@prisma/client");
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw new Error("That email is already registered.");
+    }
+    throw err;
+  }
 }
 
-export function verifyUser(email: string, password: string): PublicUser | null {
-  const e = email.trim().toLowerCase();
-  const u = loadUsers().find((x) => x.email === e);
+export async function verifyUser(email: string, password: string): Promise<PublicUser | null> {
+  const u = await (await db()).user.findUnique({ where: { email: email.trim().toLowerCase() } });
   if (!u || !checkPass(password, u.pass)) return null;
   return publicUser(u);
 }
 
-export function findByEmail(email: string): PublicUser | null {
-  const u = loadUsers().find((x) => x.email === email.trim().toLowerCase());
+export async function findByEmail(email: string): Promise<PublicUser | null> {
+  const u = await (await db()).user.findUnique({ where: { email: email.trim().toLowerCase() } });
   return u ? publicUser(u) : null;
 }
 
-export function issueOtp(email: string, now = Date.now()): string {
-  const wait = 30_000;
-  const users = loadUsers();
-  const u = users.find((x) => x.email === email.trim().toLowerCase());
+export async function issueOtp(email: string, now = Date.now()): Promise<string> {
+  const client = await db();
+  const u = await client.user.findUnique({ where: { email: email.trim().toLowerCase() } });
   if (!u) throw new Error("No account with that email.");
-  if (u.otpSent && now - u.otpSent < wait) throw new Error("Wait a moment before requesting another code.");
+  if (u.otpSent && now - Number(u.otpSent) < 30_000) throw new Error("Wait a moment before requesting another code.");
   const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
-  u.otpHash = hashOtp(code);
-  u.otpExp = now + Number(process.env.OTP_MINUTES ?? 10) * 60_000;
-  u.otpSent = now;
-  saveUsers(users);
+  await client.user.update({
+    where: { id: u.id },
+    data: {
+      otpHash: hashOtp(code),
+      otpExp: BigInt(now + Number(process.env.OTP_MINUTES ?? 10) * 60_000),
+      otpSent: BigInt(now),
+    },
+  });
   return code;
 }
 
-export function consumeOtp(email: string, code: string, now = Date.now()): PublicUser {
-  const u = mutate(email, (row) => {
-    if (row.verified) return;
-    if (!row.otpHash || !row.otpExp || row.otpExp < now) throw new Error("That code has expired. Request a new one.");
-    if (!otpMatch(code, row.otpHash)) throw new Error("That code is incorrect.");
-    row.verified = true;
-    delete row.otpHash;
-    delete row.otpExp;
-    delete row.otpSent;
+export async function consumeOtp(email: string, code: string, now = Date.now()): Promise<PublicUser> {
+  const client = await db();
+  const u = await client.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+  if (!u) throw new Error("No account with that email.");
+  if (u.verified) return publicUser(u);
+  if (!u.otpHash || !u.otpExp || Number(u.otpExp) < now) throw new Error("That code has expired. Request a new one.");
+  if (!otpMatch(code, u.otpHash)) throw new Error("That code is incorrect.");
+  const next = await client.user.update({
+    where: { id: u.id },
+    data: { verified: true, otpHash: null, otpExp: null, otpSent: null },
   });
-  return publicUser(u);
+  return publicUser(next);
+}
+
+export async function loadUserProfile(id: string): Promise<Profile> {
+  await db();
+  return (await import("./persist")).loadAccount(id);
+}
+
+export async function saveUserProfile(id: string, raw: unknown): Promise<Profile> {
+  await db();
+  return (await import("./persist")).saveAccount(id, raw);
 }

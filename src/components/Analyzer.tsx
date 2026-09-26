@@ -7,7 +7,7 @@ import { chessComGames, lichessGames, type PlatformGame } from "@/lib/api";
 import { analyzeGame, evalPosition, formatScore } from "@/lib/analyze";
 import { getEngine, pvToSan, scoreToWhiteCp, uciToSan } from "@/lib/engine";
 import { classifyMove, faultCopy, GRADE_LABEL } from "@/lib/classify";
-import { depthFor, loadProfile, saveAnalysis } from "@/lib/store";
+import { depthFor, loadProfile, patchProfile, saveAnalysis, useProfile } from "@/lib/store";
 import type { PositionEval, SavedAnalysis, Score } from "@/lib/types";
 import { Board } from "./Board";
 import { EvalBar } from "./EvalBar";
@@ -55,6 +55,7 @@ function mapFromFen(fen: string): Record<string, string> {
 }
 
 export function Analyzer() {
+  const profile = useProfile();
   const [tab, setTab] = useState<"pgn" | "chesscom" | "lichess" | "setup">("pgn");
   const [pgn, setPgn] = useState("");
   const [user, setUser] = useState("");
@@ -83,6 +84,11 @@ export function Analyzer() {
     scoreBefore: Score;
   } | null>(null);
   const lastTip = useRef<{ fen: string; bestMove: string; score: Score } | null>(null);
+
+  useEffect(() => {
+    if (tab === "chesscom") setUser(profile.chessCom);
+    if (tab === "lichess") setUser(profile.lichess);
+  }, [tab, profile.chessCom, profile.lichess]);
 
   const currentFen = useMemo(() => {
     if (tab === "setup" && !history.length) return fenFromMap(setupMap, setupTurn);
@@ -137,10 +143,13 @@ export function Analyzer() {
     setBusy("Loading games…");
     setErr("");
     try {
-      const handle = user.trim() || loadProfile().name;
+      const handle = (user.trim() || (site === "chesscom" ? profile.chessCom : profile.lichess)).toLowerCase();
       const list = site === "chesscom" ? await chessComGames(handle) : await lichessGames(handle);
       setGames(list);
-      if (!list.length) setErr(`No public games for “${handle.trim().toLowerCase()}”.`);
+      if (handle) {
+        patchProfile((p) => ({ ...p, [site === "chesscom" ? "chessCom" : "lichess"]: handle.slice(0, 64) }));
+      }
+      if (!list.length) setErr(`No public games for “${handle}”.`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Fetch failed");
     } finally {
@@ -366,6 +375,7 @@ export function Analyzer() {
             <EvalBar score={moveAt?.evalAfter ?? tip?.score} flipped={flipped} />
             <Board
               fen={tab === "setup" && !history.length ? fenFromMap(setupMap, setupTurn) : currentFen}
+              pgn={tab === "setup" ? undefined : gamePgn()}
               flipped={flipped}
               arrows={tab === "setup" ? [] : arrows}
               allowDrag={tab !== "setup"}
@@ -438,7 +448,13 @@ export function Analyzer() {
           )}
           {(tab === "chesscom" || tab === "lichess") && (
             <>
-              <input type="text" placeholder="Username" value={user} onChange={(e) => setUser(e.target.value)} />
+              <input
+                type="text"
+                placeholder={tab === "chesscom" ? "Chess.com username" : "Lichess username"}
+                value={user}
+                onChange={(e) => setUser(e.target.value)}
+                autoComplete="username"
+              />
               <div className="row" style={{ marginTop: 8 }}>
                 <button className="btn btn-primary" onClick={() => fetchGames(tab)}>
                   Load games

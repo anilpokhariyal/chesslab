@@ -1,9 +1,10 @@
 "use client";
 
 import { Chess } from "chess.js";
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { Board } from "@/components/Board";
 import { OPENINGS } from "@/lib/openings";
+import { patchProfile, useProfile } from "@/lib/store";
 
 function startPly(color: "white" | "black"): number {
   return color === "white" ? 0 : 1;
@@ -18,9 +19,24 @@ function fenAt(moves: string[], ply: number): string {
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const opening = OPENINGS.find((o) => o.id === id);
-  const [ch, setCh] = useState(0);
-  const [ply, setPly] = useState(() => startPly(opening?.color ?? "white"));
+  const profile = useProfile();
+  const saved = profile.openings[id];
+  const [ch, setCh] = useState(saved?.ch ?? 0);
+  const [ply, setPly] = useState(saved?.ply ?? startPly(opening?.color ?? "white"));
   const [msg, setMsg] = useState("Play the book move.");
+  const restored = useRef(!!saved);
+
+  useEffect(() => {
+    if (restored.current || !saved) return;
+    restored.current = true;
+    setCh(saved.ch);
+    setPly(saved.ply);
+  }, [saved]);
+
+  useEffect(() => {
+    if (!opening) return;
+    patchProfile((p) => ({ ...p, openings: { ...p.openings, [id]: { ch, ply } } }));
+  }, [id, ch, ply, opening]);
 
   if (!opening) return <p>Unknown opening.</p>;
   const chapter = opening.chapters[ch];

@@ -29,20 +29,20 @@ async function setSession(id: string) {
 export async function getSessionUser() {
   const jar = await cookies();
   const id = readToken(jar.get(COOKIE)?.value ?? "");
-  const user = id ? findUser(id) : null;
+  const user = id ? await findUser(id) : null;
   return user?.verified ? user : null;
 }
 
 export async function signup(_prev: string, form: FormData): Promise<string> {
   let email = "";
   try {
-    const user = createUser(
+    const user = await createUser(
       String(form.get("name") ?? ""),
       String(form.get("email") ?? ""),
       String(form.get("password") ?? ""),
     );
     email = user.email;
-    const otp = issueOtp(user.email);
+    const otp = await issueOtp(user.email);
     await sendOtpEmail(user, otp);
     await sendWelcomeEmail(user);
   } catch (e) {
@@ -54,7 +54,7 @@ export async function signup(_prev: string, form: FormData): Promise<string> {
 }
 
 export async function login(_prev: string, form: FormData): Promise<string> {
-  const user = verifyUser(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
+  const user = await verifyUser(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
   if (!user) return "Invalid email or password.";
   if (!user.verified) redirect(`/verify?email=${encodeURIComponent(user.email)}`);
   await setSession(user.id);
@@ -63,7 +63,7 @@ export async function login(_prev: string, form: FormData): Promise<string> {
 
 export async function verifyEmail(_prev: string, form: FormData): Promise<string> {
   try {
-    const user = consumeOtp(String(form.get("email") ?? ""), String(form.get("code") ?? ""));
+    const user = await consumeOtp(String(form.get("email") ?? ""), String(form.get("code") ?? ""));
     await setSession(user.id);
   } catch (e) {
     return e instanceof Error ? e.message : "Verification failed.";
@@ -74,10 +74,10 @@ export async function verifyEmail(_prev: string, form: FormData): Promise<string
 export async function resendOtp(_prev: string, form: FormData): Promise<string> {
   const email = String(form.get("email") ?? "");
   try {
-    const user = findByEmail(email);
+    const user = await findByEmail(email);
     if (!user) return "No account with that email.";
     if (user.verified) return "That email is already verified. Sign in.";
-    const otp = issueOtp(user.email);
+    const otp = await issueOtp(user.email);
     await sendOtpEmail(user, otp);
   } catch (e) {
     return e instanceof Error ? e.message : "Could not resend the code.";

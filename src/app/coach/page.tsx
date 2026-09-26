@@ -1,13 +1,14 @@
 "use client";
 
 import { Chess } from "chess.js";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Board } from "@/components/Board";
 import { evalPosition } from "@/lib/analyze";
 import { classifyMove, faultCopy } from "@/lib/classify";
 import { botPlan, sideCpl, type CoachMode } from "@/lib/coach";
 import { getEngine, normalizeUci, pvToSan, uciToSan } from "@/lib/engine";
-import { outcome } from "@/lib/outcome";
+import { loadGame, outcome } from "@/lib/outcome";
+import { recordGame, rememberDraft, useProfile } from "@/lib/store";
 import type { PositionEval } from "@/lib/types";
 
 const MODES: { id: CoachMode; label: string; blurb: string }[] = [
@@ -28,19 +29,68 @@ function sameUci(a: string, b: string): boolean {
   return a.slice(0, 4) === b.slice(0, 4);
 }
 
+
 export default function Page() {
+  const profile = useProfile();
   const [mode, setMode] = useState<CoachMode>("basics");
   const [level, setLevel] = useState(LEVELS[1]);
   const [side, setSide] = useState<"w" | "b">("w");
   const [on, setOn] = useState(false);
   const [fen, setFen] = useState(() => new Chess().fen());
+  const [pgn, setPgn] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Pick a mode and start.");
   const [log, setLog] = useState<{ who: "you" | "bot" | "sys"; text: string }[]>([]);
   const lastEval = useRef<PositionEval | null>(null);
   const gen = useRef(0);
+  const logRef = useRef(log);
 
-  const push = (who: "you" | "bot" | "sys", text: string) => setLog((xs) => [...xs, { who, text }]);
+  useEffect(() => {
+    if (on || !profile.coach) return;
+    const d = profile.coach;
+    const g = loadGame(d.pgn, d.fen);
+    setOn(true);
+    setSide(d.side);
+    setFen(g.fen());
+    setPgn(g.pgn());
+    setStatus(d.status);
+    setLog(d.log ?? []);
+    logRef.current = d.log ?? [];
+    if (d.mode) setMode(d.mode);
+    const lv = LEVELS.find((x) => x.name === d.opp || x.elo === d.elo);
+    if (lv) setLevel(lv);
+  }, [on, profile.coach]);
+
+  const push = (who: "you" | "bot" | "sys", text: string) =>
+    setLog((xs) => {
+      const next = [...xs, { who, text }];
+      logRef.current = next;
+      return next;
+    });
+
+  const persist = (g: Chess, text: string, playAs: "w" | "b", talk: CoachMode, lv: (typeof LEVELS)[number]) => {
+    if (g.isGameOver()) {
+      recordGame({
+        id: crypto.randomUUID(),
+        at: Date.now(),
+        kind: "coach",
+        pgn: g.pgn(),
+        result: text,
+        opp: lv.name,
+      });
+      return;
+    }
+    rememberDraft("coach", {
+      opp: lv.name,
+      elo: lv.elo,
+      side: playAs,
+      fen: g.fen(),
+      pgn: g.pgn(),
+      status: text,
+      mode: talk,
+      log: logRef.current,
+    });
+  };
 
   const talkUser = async (fenBefore: string, fenAfter: string, san: string, color: "w" | "b", uci: string) => {
     if (mode === "play") return;
@@ -82,6 +132,7 @@ export default function Page() {
       san = mv.san;
     }
     setFen(g.fen());
+    setPgn(g.pgn());
     if (mode !== "play") {
       try {
         lastEval.current = await evalPosition(g.fen(), DEPTH);
@@ -94,8 +145,10 @@ export default function Page() {
       const best = before?.bestMove ? uciToSan(fenBefore, before.bestMove) : "";
       push("bot", botPlan(san, best, line));
     }
-    const o = outcome(g.fen());
-    if (o) setStatus(o.text);
+    const o = outcome(g.fen(), g.pgn());
+    const text = o?.text ?? `vs ${level.name} · ${MODES.find((m) => m.id === mode)?.label}`;
+    if (o) setStatus(text);
+    persist(g, text, side, mode, level);
   };
 
   const start = async (playAs: "w" | "b") => {
@@ -105,6 +158,7 @@ export default function Page() {
     setOn(true);
     setSide(playAs);
     setFen(g.fen());
+    setPgn("");
     setLog([]);
     setStatus(`vs ${level.name} · ${MODES.find((m) => m.id === mode)?.label}`);
     setBusy(true);
@@ -115,13 +169,14 @@ export default function Page() {
         /* */
       }
     }
+    persist(g, `vs ${level.name} · ${MODES.find((m) => m.id === mode)?.label}`, playAs, mode, level);
     if (playAs === "b" && id === gen.current) await engineMove(g, level.elo, id);
     if (id === gen.current) setBusy(false);
   };
 
   const onDrop = (from: string, to: string, promotion?: "q" | "r" | "b" | "n") => {
     if (!on || busy) return false;
-    const g = new Chess(fen);
+    const g = loadGame(pgn, fen);
     if (g.turn() !== side) return false;
     const fenBefore = g.fen();
     let mv;
@@ -132,6 +187,7 @@ export default function Page() {
     }
     if (!mv) return false;
     setFen(g.fen());
+    setPgn(g.pgn());
     const id = gen.current;
     const uci = `${from}${to}${promotion ?? ""}`;
     void (async () => {
@@ -142,8 +198,10 @@ export default function Page() {
         /* keep playing */
       }
       if (id !== gen.current) return;
-      const o = outcome(g.fen());
-      if (o) setStatus(o.text);
+      const o = outcome(g.fen(), g.pgn());
+      const text = o?.text ?? `vs ${level.name} · ${MODES.find((m) => m.id === mode)?.label}`;
+      if (o) setStatus(text);
+      persist(g, text, side, mode, level);
       if (!g.isGameOver()) await engineMove(g, level.elo, id);
       if (id === gen.current) setBusy(false);
     })();
@@ -201,10 +259,13 @@ export default function Page() {
                 className="btn"
                 onClick={() => {
                   gen.current++;
+                  rememberDraft("coach", null);
                   setOn(false);
                   setBusy(false);
                   setFen(new Chess().fen());
+                  setPgn("");
                   setLog([]);
+                  logRef.current = [];
                   lastEval.current = null;
                   setStatus("Pick a mode and start.");
                 }}
@@ -214,7 +275,7 @@ export default function Page() {
               <span>{status}</span>
               {busy && <span className="muted">thinking…</span>}
             </div>
-            <Board fen={fen} flipped={side === "b"} onDrop={onDrop} allowDrag={!busy} announce />
+            <Board fen={fen} pgn={pgn} flipped={side === "b"} onDrop={onDrop} allowDrag={!busy} announce />
           </section>
           <section className="panel">
             <h2>Notes</h2>

@@ -1,15 +1,38 @@
-# Run on the server after: docker pull anilpokhariya/plywise:latest
+# Run on the server after: docker pull anilpokhariya/chesslab:latest
 # Put SMTP + AUTH_SECRET in a sibling `.env` (not committed).
 
 services:
-  plywise:
-    image: anilpokhariya/plywise:latest
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: chesslab
+      MYSQL_USER: chesslab
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-chesslab}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-chesslab}
+    ports:
+      - "3306:3306"
+    volumes:
+      - chesslab-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pchesslab"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  chesslab:
+    image: anilpokhariya/chesslab:latest
     ports:
       - "3000:3000"
+    depends_on:
+      mysql:
+        condition: service_healthy
     environment:
       APP_NAME: ChessLab
       APP_URL: https://plywise.erevolutionsindia.com
       AUTH_SECRET: ${AUTH_SECRET}
+      DATABASE_URL: mysql://chesslab:${MYSQL_PASSWORD:-chesslab}@mysql:3306/chesslab
+      MYSQL_URL: mysql://chesslab:${MYSQL_PASSWORD:-chesslab}@mysql:3306/chesslab
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
@@ -19,8 +42,9 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ChessLab}
       OTP_MINUTES: ${OTP_MINUTES:-10}
     volumes:
-      - plywise-data:/app/data
+      - chesslab-data:/app/data
     restart: unless-stopped
 
 volumes:
-  plywise-data:
+  chesslab-data:
+  chesslab-mysql:

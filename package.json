@@ -7,10 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check": "node --experimental-strip-types src/lib/classify.test.ts && node --experimental-strip-types src/lib/auth.test.ts && node --experimental-strip-types src/lib/promo.test.ts && node --experimental-strip-types src/lib/outcome.test.ts && node --experimental-strip-types src/lib/sound.test.ts",
-    "postinstall": "mkdir -p public/stockfish && cp node_modules/stockfish/bin/stockfish-19-lite-single.js node_modules/stockfish/bin/stockfish-19-lite-single.wasm public/stockfish/"
+    "test": "c8 --check-coverage --lines 92 --statements 92 --functions 80 --branches 65 --include 'src/lib/**/*.ts' --exclude 'src/lib/**/*.test.ts' --exclude 'src/lib/types.ts' --exclude 'src/lib/test-env.ts' --exclude 'src/lib/run-tests.ts' --reporter=text --reporter=text-summary tsx src/lib/run-tests.ts",
+    "check": "npm test",
+    "postinstall": "prisma generate && mkdir -p public/stockfish && cp node_modules/stockfish/bin/stockfish-19-lite-single.js node_modules/stockfish/bin/stockfish-19-lite-single.wasm public/stockfish/",
+    "db:push": "prisma db push"
   },
   "dependencies": {
+    "@prisma/client": "6.19.3",
     "chess.js": "^1.4.0",
     "next": "16.3.6",
     "nodemailer": "^10.0.10",
@@ -23,9 +26,12 @@
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "c8": "^12.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "prisma": "6.19.3",
     "stockfish": "^19.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

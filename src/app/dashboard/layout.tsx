@@ -3,7 +3,7 @@ import { meta, PassThrough } from "@/lib/seo";
 
 export const metadata: Metadata = meta({
   title: "Dashboard",
-  description: "Your local skill scores from saved analyses.",
+  description: "Your puzzle rating, games, and saved analyses.",
   path: "/dashboard",
   index: false,
 });

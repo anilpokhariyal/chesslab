@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <>
       <h1 className="page-title">Puzzle stats</h1>
-      <p className="lede">This browser only. A global board needs a server.</p>
+      <p className="lede">Your puzzle growth. Sign in and it stays on your account.</p>
       <div className="panel" style={{ maxWidth: 420 }}>
         <div className="stat">
           <span>Name</span>

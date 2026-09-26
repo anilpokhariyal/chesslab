@@ -1,10 +1,11 @@
 "use client";
 
 import { Chess } from "chess.js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Board } from "@/components/Board";
 import { getEngine, normalizeUci } from "@/lib/engine";
-import { outcome } from "@/lib/outcome";
+import { cloneGame, loadGame, outcome } from "@/lib/outcome";
+import { recordGame, rememberDraft, useProfile } from "@/lib/store";
 
 const BOTS = [
   { name: "Pawn Pusher", elo: 600 },
@@ -19,7 +20,9 @@ const BOTS = [
   { name: "Stockfish", elo: 3000 },
 ];
 
+
 export default function Page() {
+  const profile = useProfile();
   const [bot, setBot] = useState<(typeof BOTS)[number] | null>(null);
   const [game, setGame] = useState(() => new Chess());
   const [fen, setFen] = useState(game.fen());
@@ -27,10 +30,36 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Pick a bot.");
 
-  const engineMove = async (g: Chess, elo: number) => {
+  useEffect(() => {
+    if (bot || !profile.play) return;
+    const d = profile.play;
+    const g = loadGame(d.pgn, d.fen);
+    setBot(BOTS.find((b) => b.name === d.opp) ?? { name: d.opp, elo: d.elo });
+    setSide(d.side);
+    setGame(g);
+    setFen(g.fen());
+    setStatus(d.status);
+  }, [bot, profile.play]);
+
+  const persist = (b: (typeof BOTS)[number], playAs: "w" | "b", g: Chess, text: string) => {
+    if (g.isGameOver()) {
+      recordGame({
+        id: crypto.randomUUID(),
+        at: Date.now(),
+        kind: "play",
+        pgn: g.pgn(),
+        result: text,
+        opp: b.name,
+      });
+      return;
+    }
+    rememberDraft("play", { opp: b.name, elo: b.elo, side: playAs, fen: g.fen(), pgn: g.pgn(), status: text });
+  };
+
+  const engineMove = async (b: (typeof BOTS)[number], playAs: "w" | "b", g: Chess) => {
     setBusy(true);
     const uci = await getEngine().bestMove(g.fen(), {
-      elo: elo >= 3000 ? undefined : elo,
+      elo: b.elo >= 3000 ? undefined : b.elo,
       movetime: 400,
     });
     if (uci && uci !== "(none)") {
@@ -38,10 +67,12 @@ export default function Page() {
       g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: (u[4] as "q") || "q" });
     }
     setFen(g.fen());
-    setGame(new Chess(g.fen()));
+    setGame(cloneGame(g));
     setBusy(false);
-    const o = outcome(g.fen());
-    if (o) setStatus(o.text);
+    const o = outcome(g.fen(), g.pgn());
+    const text = o?.text ?? `vs ${b.name}`;
+    if (o) setStatus(text);
+    persist(b, playAs, g, text);
   };
 
   const start = async (b: (typeof BOTS)[number], playAs: "w" | "b") => {
@@ -51,24 +82,27 @@ export default function Page() {
     setGame(g);
     setFen(g.fen());
     setStatus(`vs ${b.name}`);
-    if (playAs === "b") await engineMove(g, b.elo);
+    persist(b, playAs, g, `vs ${b.name}`);
+    if (playAs === "b") await engineMove(b, playAs, g);
   };
 
   const onDrop = (from: string, to: string, promotion?: "q" | "r" | "b" | "n") => {
     if (!bot || busy) return false;
     if (game.turn() !== side) return false;
-    const g = new Chess(fen);
+    const g = cloneGame(game);
     try {
       if (!g.move({ from, to, promotion: promotion ?? "q" })) return false;
     } catch {
       return false;
     }
     setFen(g.fen());
-    setGame(new Chess(g.fen()));
-    const o = outcome(g.fen());
-    if (o) setStatus(o.text);
+    setGame(cloneGame(g));
+    const o = outcome(g.fen(), g.pgn());
+    const text = o?.text ?? `vs ${bot.name}`;
+    if (o) setStatus(text);
+    persist(bot, side, g, text);
     if (g.isGameOver()) return true;
-    engineMove(g, bot.elo);
+    engineMove(bot, side, g);
     return true;
   };
 
@@ -98,13 +132,19 @@ export default function Page() {
       ) : (
         <>
           <div className="row" style={{ marginBottom: 8 }}>
-            <button className="btn" onClick={() => setBot(null)}>
+            <button
+              className="btn"
+              onClick={() => {
+                rememberDraft("play", null);
+                setBot(null);
+              }}
+            >
               Change bot
             </button>
             <span>{status}</span>
             {busy && <span className="muted">thinking…</span>}
           </div>
-          <Board fen={fen} flipped={side === "b"} onDrop={onDrop} allowDrag={!busy} announce />
+          <Board fen={fen} pgn={game.pgn()} flipped={side === "b"} onDrop={onDrop} allowDrag={!busy} announce />
         </>
       )}
     </>
