@@ -69,6 +69,7 @@ export async function run(): Promise<void> {
   const black = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
   const ev = await getEngine().analyze(start, 8, 3);
   assert.equal(ev.bestMove, "e1g1");
+  assert.equal((await getEngine().analyze(start, 8, 1, 50)).bestMove, "e1g1");
   assert.equal(ev.pvs[0]?.score.type, "cp");
   const evb = await getEngine().analyze(black, 6);
   assert.equal(evb.score.type, "cp");

@@ -69,14 +69,14 @@ class Stockfish {
     });
   }
 
-  async analyze(fen: string, depth: number, multiPv = 3): Promise<PositionEval> {
+  async analyze(fen: string, depth: number, multiPv = 3, movetime?: number): Promise<PositionEval> {
     await this.ensure();
     const lines = await this.run(
       [
         "setoption name UCI_LimitStrength value false",
         `setoption name MultiPV value ${multiPv}`,
         `position fen ${fen}`,
-        `go depth ${depth}`,
+        movetime ? `go movetime ${movetime}` : `go depth ${depth}`,
       ],
       (l) => l.startsWith("bestmove"),
     );

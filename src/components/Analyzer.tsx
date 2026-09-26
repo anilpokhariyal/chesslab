@@ -6,13 +6,35 @@ import type { Arrow } from "react-chessboard";
 import { chessComGames, lichessGames, type PlatformGame } from "@/lib/api";
 import { analyzeGame, evalPosition, formatScore } from "@/lib/analyze";
 import { getEngine, pvToSan, scoreToWhiteCp, uciToSan } from "@/lib/engine";
-import { classifyMove, faultCopy, GRADE_LABEL } from "@/lib/classify";
+import { classifyMove, faultCopy, GRADE_GLYPH, GRADE_LABEL, GRADE_ORDER, nextGradePly, type Grade } from "@/lib/classify";
 import { depthFor, loadProfile, patchProfile, saveAnalysis, useProfile } from "@/lib/store";
 import type { PositionEval, SavedAnalysis, Score } from "@/lib/types";
 import { Board } from "./Board";
 import { EvalBar } from "./EvalBar";
 
 const START = new Chess().fen();
+
+function sideOf(cp: number): -1 | 0 | 1 {
+  return cp > 20 ? 1 : cp < -20 ? -1 : 0;
+}
+
+function movePts(m?: { evalAfter: Score }, prev?: { evalAfter: Score }) {
+  if (!m) return <span className="pts" />;
+  const cp = scoreToWhiteCp(m.evalAfter);
+  const prevCp = prev ? scoreToWhiteCp(prev.evalAfter) : 0;
+  const flip = !!prev && sideOf(cp) !== sideOf(prevCp) && !!sideOf(cp) && !!sideOf(prevCp);
+  const drop =
+    !!prev &&
+    m.evalAfter.type === "cp" &&
+    prev.evalAfter.type === "cp" &&
+    Math.abs(prevCp) >= 150 &&
+    Math.abs(prevCp) - Math.abs(cp) >= 100;
+  return (
+    <span className={`pts ${cp > 0 ? "plus" : cp < 0 ? "minus" : ""}${flip || drop ? " swing" : ""}`}>
+      {formatScore(m.evalAfter)}
+    </span>
+  );
+}
 
 function sameUci(a: string, b: string): boolean {
   return a.slice(0, 4) === b.slice(0, 4);
@@ -77,6 +99,8 @@ export function Analyzer() {
   const [headers, setHeaders] = useState({ white: "White", black: "Black", result: "*" });
   const [fault, setFault] = useState<ReturnType<typeof faultCopy> | null>(null);
   const [waitingFault, setWaitingFault] = useState(false);
+  const [ask, setAsk] = useState<PlatformGame | null>(null);
+  const askRef = useRef<HTMLDialogElement>(null);
   const pendingFault = useRef<{
     playedSan: string;
     color: "w" | "b";
@@ -89,6 +113,10 @@ export function Analyzer() {
     if (tab === "chesscom") setUser(profile.chessCom);
     if (tab === "lichess") setUser(profile.lichess);
   }, [tab, profile.chessCom, profile.lichess]);
+
+  useEffect(() => {
+    document.querySelector(".moves button.on")?.scrollIntoView({ block: "nearest" });
+  }, [ply]);
 
   const currentFen = useMemo(() => {
     if (tab === "setup" && !history.length) return fenFromMap(setupMap, setupTurn);
@@ -115,11 +143,12 @@ export function Analyzer() {
     return replay.fen();
   }, [pgn, ply, history, tab, setupMap, setupTurn, startFen]);
 
-  const loadPgn = (text: string) => {
+  const loadPgn = (text: string): string | null => {
     try {
       const g = new Chess();
       g.loadPgn(text);
-      setPgn(g.pgn());
+      const loaded = g.pgn();
+      setPgn(loaded);
       setHistory([]);
       setStartFen(g.history({ verbose: true })[0]?.before ?? START);
       setPly(g.history().length);
@@ -134,8 +163,10 @@ export function Analyzer() {
       setFault(null);
       pendingFault.current = null;
       setWaitingFault(false);
+      return loaded;
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Bad PGN");
+      return null;
     }
   };
 
@@ -170,6 +201,11 @@ export function Analyzer() {
     setFault(null);
     pendingFault.current = null;
     setWaitingFault(false);
+  };
+
+  const jumpGrade = (grade: Grade) => {
+    const next = analysis ? nextGradePly(analysis.moves.map((m) => m.grade), ply, grade) : null;
+    if (next) goPly(next);
   };
 
   const onDrop = (from: string, to: string, promotion?: "q" | "r" | "b" | "n") => {
@@ -281,8 +317,8 @@ export function Analyzer() {
     getEngine().stop();
   };
 
-  const runFull = async () => {
-    const text = gamePgn();
+  const runFull = async (from?: string) => {
+    const text = typeof from === "string" ? from : gamePgn();
     if (!text && !sans.length) return;
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -290,6 +326,7 @@ export function Analyzer() {
     fullRef.current = true;
     const plan = loadProfile().plan;
     setBusy("Full analysis…");
+    setErr("");
     setProgress(0);
     try {
       const a = await analyzeGame(text, depthFor(plan), (d, t) => setProgress(d / t), ac.signal);
@@ -303,6 +340,20 @@ export function Analyzer() {
       setBusy("");
     }
   };
+
+  const startImported = (mode: "full" | "manual") => {
+    if (!ask) return;
+    const loaded = loadPgn(ask.pgn);
+    setAsk(null);
+    if (mode === "full" && loaded) void runFull(loaded);
+  };
+
+  useEffect(() => {
+    const d = askRef.current;
+    if (!d) return;
+    if (ask && !d.open) d.showModal();
+    if (!ask && d.open) d.close();
+  }, [ask]);
 
   const applySetup = () => {
     const f = fenFromMap(setupMap, setupTurn);
@@ -462,7 +513,7 @@ export function Analyzer() {
               </div>
               <div className="game-list" style={{ marginTop: 8 }}>
                 {games.map((g) => (
-                  <button key={g.id} className="btn" onClick={() => loadPgn(g.pgn)}>
+                  <button key={g.id} className="btn" onClick={() => setAsk(g)}>
                     {g.white} vs {g.black} {g.result} {g.time ? `· ${g.time}` : ""}
                   </button>
                 ))}
@@ -498,21 +549,34 @@ export function Analyzer() {
           {err && <p className="grade blunder" style={{ marginTop: 8 }}>{err}</p>}
 
           <h2 style={{ marginTop: 16 }}>Moves</h2>
-          <div className="moves">
+          {analysis && (
+            <div className="row" style={{ margin: "8px 0", flexWrap: "wrap" }}>
+              {GRADE_ORDER.filter((g) => counts[g]).map((g) => (
+                <button key={g} className={`btn grade ${g}`} onClick={() => jumpGrade(g)}>
+                  {counts[g]} {GRADE_LABEL[g]}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className={`moves${analysis ? " scored" : ""}`}>
             {Array.from({ length: Math.ceil(sans.length / 2) }, (_, i) => {
               const w = sans[i * 2];
               const b = sans[i * 2 + 1];
               const wg = analysis?.moves[i * 2];
               const bg = analysis?.moves[i * 2 + 1];
+              const prevW = analysis?.moves[i * 2 - 1];
+              const prevB = wg;
               return (
                 <span key={i} style={{ display: "contents" }}>
                   <span className="muted">{i + 1}.</span>
                   <button className={ply === i * 2 + 1 ? "on" : ""} onClick={() => goPly(i * 2 + 1)}>
-                    {w} {wg && <span className={`grade ${wg.grade}`}>{GRADE_LABEL[wg.grade]}</span>}
+                    {w} {wg && GRADE_GLYPH[wg.grade] ? <span className={`grade ${wg.grade}`}>{GRADE_GLYPH[wg.grade]}</span> : null}
                   </button>
+                  {analysis ? movePts(wg, prevW) : null}
                   <button className={ply === i * 2 + 2 ? "on" : ""} onClick={() => goPly(i * 2 + 2)} disabled={!b}>
-                    {b} {bg && <span className={`grade ${bg.grade}`}>{GRADE_LABEL[bg.grade]}</span>}
+                    {b} {bg && GRADE_GLYPH[bg.grade] ? <span className={`grade ${bg.grade}`}>{GRADE_GLYPH[bg.grade]}</span> : null}
                   </button>
+                  {analysis ? movePts(bg, prevB) : null}
                 </span>
               );
             })}
@@ -543,7 +607,7 @@ export function Analyzer() {
                 Cancel
               </button>
             ) : (
-              <button className="btn btn-primary" onClick={runFull} disabled={!!busy || (sans.length === 0 && !pgn)}>
+              <button className="btn btn-primary" onClick={() => void runFull()} disabled={!!busy || (sans.length === 0 && !pgn)}>
                 Full game analysis
               </button>
             )}
@@ -580,11 +644,13 @@ export function Analyzer() {
           )}
           <h2 style={{ marginTop: 12 }}>Summary</h2>
           {analysis ? (
-            <p className="muted">
-              {Object.entries(counts)
-                .map(([k, v]) => `${v} ${k}`)
-                .join(" · ")}
-            </p>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              {GRADE_ORDER.filter((g) => counts[g]).map((g) => (
+                <button key={g} className={`btn grade ${g}`} onClick={() => jumpGrade(g)}>
+                  {counts[g]} {GRADE_LABEL[g]}
+                </button>
+              ))}
+            </div>
           ) : (
             <p className="muted">Run full analysis to see move breakdown.</p>
           )}
@@ -596,6 +662,26 @@ export function Analyzer() {
           )}
         </section>
       </div>
+      <dialog ref={askRef} className="ask" onClose={() => setAsk(null)}>
+        <h2>How do you want to analyze?</h2>
+        <p className="muted">
+          {ask ? `${ask.white} vs ${ask.black} ${ask.result}` : ""}
+        </p>
+        <p className="muted" style={{ marginTop: 8 }}>
+          Full game analysis grades every move. Manual lets you step through and see Stockfish’s suggestion on the position you are on.
+        </p>
+        <div className="row" style={{ marginTop: 16 }}>
+          <button className="btn btn-primary" onClick={() => startImported("full")}>
+            Full game analysis
+          </button>
+          <button className="btn" onClick={() => startImported("manual")}>
+            Manual analysis
+          </button>
+          <button className="btn" onClick={() => setAsk(null)}>
+            Cancel
+          </button>
+        </div>
+      </dialog>
     </>
   );
 }

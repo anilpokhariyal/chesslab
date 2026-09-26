@@ -1,10 +1,13 @@
 export type Grade =
+  | "book"
   | "brilliant"
   | "best"
   | "good"
   | "inaccuracy"
   | "mistake"
   | "blunder";
+
+export const GRADE_ORDER: Grade[] = ["book", "brilliant", "best", "good", "inaccuracy", "mistake", "blunder"];
 
 export function classifyMove(opts: {
   cpl: number;
@@ -31,12 +34,28 @@ export function mean(xs: number[]): number {
 }
 
 export const GRADE_LABEL: Record<Grade, string> = {
+  book: "Book",
   brilliant: "Brilliant",
   best: "Best",
   good: "Good",
   inaccuracy: "Inaccuracy",
   mistake: "Mistake",
   blunder: "Blunder",
+};
+
+export function nextGradePly(grades: string[], ply: number, grade: string): number | null {
+  const plies = grades.flatMap((g, i) => (g === grade ? [i + 1] : []));
+  return plies.find((p) => p > ply) ?? plies[0] ?? null;
+}
+
+export const GRADE_GLYPH: Record<Grade, string> = {
+  book: "Book",
+  brilliant: "!!",
+  best: "!",
+  good: "",
+  inaccuracy: "?!",
+  mistake: "?",
+  blunder: "??",
 };
 
 export function faultCopy(played: string, best: string, grade: Grade, cpl: number, punish: string, line: string) {

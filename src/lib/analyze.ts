@@ -1,6 +1,6 @@
 import { Chess } from "chess.js";
 import { classifyMove, mean, moveAccuracy } from "./classify";
-import { cloudEval, openingName } from "./api";
+import { cloudEval, openingName, resetCloudEval } from "./api";
 import {
   formatScore,
   getEngine,
@@ -23,7 +23,7 @@ function cloudToEval(fen: string, cloud: { pvs: { moves: string; cp?: number; ma
 
 export async function evalPosition(fen: string, depth: number): Promise<PositionEval> {
   const cloud = await cloudEval(fen);
-  if (cloud && cloud.depth >= Math.min(depth, 12)) return cloudToEval(fen, cloud);
+  if (cloud && cloud.depth >= Math.min(depth, 8)) return cloudToEval(fen, cloud);
   return getEngine().analyze(fen, depth, 3);
 }
 
@@ -47,11 +47,19 @@ export async function analyzeGame(
     fens.push(replay.fen());
   }
 
+  resetCloudEval();
   const evals: PositionEval[] = [];
-  for (let i = 0; i < fens.length; i++) {
+  // ponytail: WASM lite can't do depth 12×3PV×80 plies; cloud first, 120ms local if miss
+  for (let i = 0; i < fens.length; i += 8) {
     if (signal?.aborted) throw new DOMException("cancelled", "AbortError");
-    evals.push(await evalPosition(fens[i], depth));
-    onProgress?.(i + 1, fens.length);
+    const got = await Promise.all(
+      fens.slice(i, i + 8).map(async (fen) => {
+        const cloud = await cloudEval(fen);
+        return cloud ? cloudToEval(fen, cloud) : getEngine().analyze(fen, Math.min(depth, 10), 1, 120);
+      }),
+    );
+    evals.push(...got);
+    onProgress?.(evals.length, fens.length);
   }
 
   const moves: AnalyzedMove[] = verbose.map((m, i) => {
@@ -83,6 +91,12 @@ export async function analyzeGame(
   const white = moves.filter((x) => x.color === "w");
   const black = moves.filter((x) => x.color === "b");
   const opening = (await openingName(fens[Math.min(8, fens.length - 1)])) ?? undefined;
+  if (opening) {
+    for (const m of moves) {
+      if (m.grade === "best" || m.grade === "good") m.grade = "book";
+      else break;
+    }
+  }
 
   return {
     id: `${Date.now()}`,

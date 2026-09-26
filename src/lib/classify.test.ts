@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
-import { classifyMove, faultCopy, moveAccuracy } from "./classify.ts";
+import { classifyMove, faultCopy, GRADE_LABEL, moveAccuracy, nextGradePly } from "./classify.ts";
 
+assert.equal(GRADE_LABEL.book, "Book");
+assert.equal(nextGradePly(["best", "blunder", "best"], 0, "blunder"), 2);
+assert.equal(nextGradePly(["best", "blunder"], 2, "blunder"), 2);
+assert.equal(nextGradePly(["best"], 0, "blunder"), null);
 assert.equal(classifyMove({ cpl: 0, isBest: true, isSacrifice: true }), "brilliant");
 assert.equal(classifyMove({ cpl: 0, isBest: true, isSacrifice: false }), "best");
 assert.equal(classifyMove({ cpl: 8, isBest: false, isSacrifice: false }), "best");

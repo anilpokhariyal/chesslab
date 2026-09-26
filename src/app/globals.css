@@ -183,15 +183,22 @@ textarea, input[type="text"], input[type="number"], input[type="email"], input[t
 textarea { min-height: 120px; resize: vertical; font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; }
 
 .moves { display: grid; grid-template-columns: auto 1fr 1fr; gap: 2px 6px; font-size: 13px; max-height: 280px; overflow: auto; }
+.moves.scored { grid-template-columns: auto max-content auto max-content auto; justify-content: start; }
 .moves button { background: none; border: 0; text-align: left; padding: 2px 4px; border-radius: 4px; cursor: pointer; color: var(--text); }
 .moves button.on { background: #2a4a3a; }
+.pts { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--muted); text-align: right; min-width: 3.4em; padding: 2px 3px; align-self: center; }
+.pts.plus { color: var(--good); }
+.pts.minus { color: var(--danger); }
+.pts.swing { font-weight: 700; background: color-mix(in oklab, var(--warn) 24%, transparent); border-radius: 4px; }
 .grade { font-size: 11px; font-weight: 700; }
+.grade.book { color: #8b97a8; }
 .grade.brilliant { color: var(--brilliant); }
 .grade.best { color: var(--best); }
 .grade.good { color: var(--good); }
 .grade.inaccuracy { color: var(--note); }
 .grade.mistake { color: var(--warn); }
 .grade.blunder { color: var(--danger); }
+.btn.grade { font-size: 12px; }
 .fault {
   margin-bottom: 12px;
   padding: 10px 12px;
@@ -204,6 +211,18 @@ textarea { min-height: 120px; resize: vertical; font-family: var(--font-mono), u
 
 .game-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow: auto; }
 .game-list button { text-align: left; }
+
+dialog.ask {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  max-width: 440px;
+  width: calc(100% - 32px);
+}
+dialog.ask::backdrop { background: #0008; }
+dialog.ask h2 { font-size: 1.15rem; margin-bottom: 8px; }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 8px; }

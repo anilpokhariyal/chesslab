@@ -50,6 +50,7 @@ export async function run(): Promise<void> {
   assert.equal(a.result, "1-0");
   assert.equal(a.moves.length, 2);
   assert.equal(a.opening, "C20 King's Pawn Game");
+  assert.equal(a.moves[0]?.grade, "book");
   assert.ok(seen >= 2);
 
   const ac = new AbortController();

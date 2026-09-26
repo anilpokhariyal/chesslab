@@ -7,8 +7,8 @@ export type PlatformGame = {
   time?: string;
 };
 
-async function getJson(url: string): Promise<unknown> {
-  const res = await fetch(url);
+async function getJson(url: string, ms?: number): Promise<unknown> {
+  const res = await fetch(url, ms ? { signal: AbortSignal.timeout(ms) } : undefined);
   if (!res.ok) throw new Error(res.status === 429 ? "Too many requests. Wait a moment and try again." : `${res.status} ${url}`);
   return res.json();
 }
@@ -145,18 +145,29 @@ export async function fetchDailyPuzzle(): Promise<LichessPuzzle> {
   };
 }
 
+// ponytail: prod server can't reach lichess.org; 404 is a miss, network fail skips the rest
+let cloudUnreachable = false;
+
+export function resetCloudEval(): void {
+  cloudUnreachable = false;
+}
+
 export async function cloudEval(fen: string): Promise<{
   depth: number;
   pvs: { moves: string; cp?: number; mate?: number }[];
 } | null> {
+  if (cloudUnreachable) return null;
   try {
-    const data = (await getJson(`/api/lichess/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=3`)) as {
-      depth?: number;
-      pvs?: { moves: string; cp?: number; mate?: number }[];
-    };
+    const res = await fetch(
+      `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=3`,
+      { signal: AbortSignal.timeout(1500) },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { depth?: number; pvs?: { moves: string; cp?: number; mate?: number }[] };
     if (!data.pvs?.length) return null;
     return { depth: data.depth ?? 0, pvs: data.pvs };
   } catch {
+    cloudUnreachable = true;
     return null;
   }
 }
