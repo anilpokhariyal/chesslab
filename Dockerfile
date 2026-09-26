@@ -13,7 +13,7 @@ RUN npx prisma generate
 ARG APP_URL=https://plywise.erevolutionsindia.com
 ENV APP_URL=$APP_URL
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV DATABASE_URL=mysql://chesslab:chesslab@127.0.0.1:3306/chesslab
+ENV DATABASE_URL=mysql://build@127.0.0.1:3306/chesslab
 RUN npm run build
 
 FROM node:22-alpine AS runner

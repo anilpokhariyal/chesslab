@@ -13,7 +13,7 @@ Full notes: [README.md](./README.md). This is the short path to a running copy.
    npm install
    ```
 
-3. Start MySQL:
+3. Create a sibling `.env` with `MYSQL_PASSWORD` and `MYSQL_ROOT_PASSWORD`, then start MySQL:
 
    ```bash
    docker compose up -d mysql
@@ -29,8 +29,8 @@ Full notes: [README.md](./README.md). This is the short path to a running copy.
 
    ```
    APP_URL=http://localhost:3000
-   DATABASE_URL=mysql://chesslab:chesslab@127.0.0.1:3306/chesslab
-   MYSQL_URL=mysql://chesslab:chesslab@127.0.0.1:3306/chesslab
+   DATABASE_URL=   # mysql://USER:PASSWORD@127.0.0.1:3306/chesslab
+   MYSQL_URL=      # same as DATABASE_URL
    ```
 
 5. Create tables:
@@ -51,7 +51,7 @@ Sign-up OTP: if SMTP is unset, open `data/last-email.txt` for the code.
 
 ## Docker (app + MySQL)
 
-Create a `.env` next to `docker-compose.yml` with at least `AUTH_SECRET` (`openssl rand -hex 32`). Then:
+Create a `.env` next to `docker-compose.yml` with `AUTH_SECRET` (`openssl rand -hex 32`), `MYSQL_PASSWORD`, and `MYSQL_ROOT_PASSWORD`. Then:
 
 ```bash
 docker compose up -d

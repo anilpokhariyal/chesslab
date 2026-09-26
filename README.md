@@ -31,7 +31,7 @@ npm install
 docker compose up -d mysql
 ```
 
-That starts MySQL 8.4 on `127.0.0.1:3306` as user/password/database `chesslab` / `chesslab` / `chesslab`.
+That starts MySQL 8.4 on `127.0.0.1:3306`. Put `MYSQL_PASSWORD` and `MYSQL_ROOT_PASSWORD` in a sibling `.env` (not committed). The database and app user are both `chesslab`.
 
 ### 2. Env
 
@@ -43,9 +43,9 @@ For local work set:
 
 ```
 APP_URL=http://localhost:3000
-DATABASE_URL=mysql://chesslab:chesslab@127.0.0.1:3306/chesslab
-MYSQL_URL=mysql://chesslab:chesslab@127.0.0.1:3306/chesslab
-AUTH_SECRET=     # optional locally; a file is created under data/.secret
+DATABASE_URL=   # mysql://USER:PASSWORD@127.0.0.1:3306/chesslab
+MYSQL_URL=      # same as DATABASE_URL
+AUTH_SECRET=    # optional locally; a file is created under data/.secret
 ```
 
 Leave SMTP blank to skip real email.
@@ -76,7 +76,7 @@ npm start        # serve that build (still needs DATABASE_URL)
 
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | Yes (accounts) | Prisma. `mysql://user:pass@host:3306/chesslab` |
+| `DATABASE_URL` | Yes (accounts) | Prisma. `mysql://USER:PASSWORD@host:3306/chesslab` |
 | `MYSQL_URL` | Fallback | Used if `DATABASE_URL` is unset |
 | `APP_URL` | Prod | Public origin for SEO, OTP links, cookies |
 | `AUTH_SECRET` | Prod | `openssl rand -hex 32` |
@@ -93,12 +93,13 @@ Do not commit `.env.local` or `/data`.
 Sibling `.env` next to `docker-compose.yml` (not committed):
 
 ```
-AUTH_SECRET=your-hex-secret
-MYSQL_PASSWORD=chesslab
+AUTH_SECRET=
+MYSQL_PASSWORD=
+MYSQL_ROOT_PASSWORD=
 SMTP_HOST=smtp.gmail.com
-SMTP_USER=you@gmail.com
-SMTP_PASS=your-app-password
-SMTP_FROM=you@gmail.com
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
 ```
 
 Then:
@@ -117,7 +118,7 @@ docker compose up -d
 The image does not run migrations. After MySQL is healthy:
 
 ```bash
-export DATABASE_URL=mysql://chesslab:chesslab@127.0.0.1:3306/chesslab
+export DATABASE_URL   # mysql://USER:PASSWORD@127.0.0.1:3306/chesslab
 npx prisma db push
 ```
 

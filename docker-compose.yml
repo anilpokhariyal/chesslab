@@ -7,14 +7,14 @@ services:
     environment:
       MYSQL_DATABASE: chesslab
       MYSQL_USER: chesslab
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-chesslab}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-chesslab}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
     ports:
       - "3306:3306"
     volumes:
       - chesslab-mysql:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pchesslab"]
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -31,8 +31,8 @@ services:
       APP_NAME: ChessLab
       APP_URL: https://plywise.erevolutionsindia.com
       AUTH_SECRET: ${AUTH_SECRET}
-      DATABASE_URL: mysql://chesslab:${MYSQL_PASSWORD:-chesslab}@mysql:3306/chesslab
-      MYSQL_URL: mysql://chesslab:${MYSQL_PASSWORD:-chesslab}@mysql:3306/chesslab
+      DATABASE_URL: mysql://chesslab:${MYSQL_PASSWORD}@mysql:3306/chesslab
+      MYSQL_URL: mysql://chesslab:${MYSQL_PASSWORD}@mysql:3306/chesslab
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}

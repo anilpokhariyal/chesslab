@@ -14,5 +14,4 @@ if (existsSync(".env.local")) {
     }
   }
 }
-process.env.DATABASE_URL ??= "mysql://chesslab:chesslab@127.0.0.1:3306/chesslab";
-process.env.AUTH_SECRET ??= "test-secret-test-secret-test-secret";
+process.env.AUTH_SECRET ??= "x".repeat(32);
