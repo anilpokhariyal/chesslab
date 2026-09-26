@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 
 function databaseUrl(): string {
@@ -26,10 +27,12 @@ export async function ready(): Promise<PrismaClient> {
 type DumpUser = { id: string; name?: string; profile?: unknown };
 
 function dumpUsers(): DumpUser[] {
-  for (const path of ["data/users-export.json", "data/users.json"]) {
-    if (!existsSync(path)) continue;
+  const dir = join(process.cwd(), "data");
+  for (const name of ["users-export.json", "users.json"] as const) {
+    const file = join(dir, name);
+    if (!existsSync(file)) continue;
     try {
-      const raw = JSON.parse(readFileSync(path, "utf8")) as DumpUser[];
+      const raw = JSON.parse(readFileSync(file, "utf8")) as DumpUser[];
       if (Array.isArray(raw)) return raw;
     } catch {
       /* next file */
