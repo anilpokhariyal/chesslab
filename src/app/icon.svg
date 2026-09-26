@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="8" fill="#1c2430"/>
+  <rect x="4" y="4" width="12" height="12" fill="#eedeb0"/>
+  <rect x="16" y="4" width="12" height="12" fill="#5a7a48"/>
+  <rect x="4" y="16" width="12" height="12" fill="#5a7a48"/>
+  <rect x="16" y="16" width="12" height="12" fill="#3d9b6e"/>
+  <text x="16" y="22.5" text-anchor="middle" font-size="16" fill="#10141a">♘</text>
+</svg>

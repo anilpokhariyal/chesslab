@@ -1,0 +1,61 @@
+import type { Grade } from "./classify";
+import type { SoundPrefs } from "./sound";
+
+export type Plan = "free" | "premium" | "coach";
+
+export type Score = { type: "cp" | "mate"; value: number };
+
+export type PvLine = {
+  moves: string[];
+  score: Score;
+};
+
+export type PositionEval = {
+  fen: string;
+  bestMove: string;
+  score: Score;
+  pvs: PvLine[];
+};
+
+export type AnalyzedMove = {
+  san: string;
+  uci: string;
+  fenBefore: string;
+  fenAfter: string;
+  color: "w" | "b";
+  cpl: number;
+  grade: Grade;
+  bestSan: string;
+  bestUci: string;
+  evalBefore: Score;
+  evalAfter: Score;
+};
+
+export type SavedAnalysis = {
+  id: string;
+  at: number;
+  white: string;
+  black: string;
+  result: string;
+  pgn: string;
+  opening?: string;
+  moves: AnalyzedMove[];
+  whiteAccuracy: number;
+  blackAccuracy: number;
+  whiteAcpl: number;
+  blackAcpl: number;
+};
+
+export type Profile = {
+  name: string;
+  plan: Plan;
+  puzzleRating: number;
+  streak: number;
+  solved: number;
+  failed: number;
+  bestStreak: number;
+  theme: string;
+  sounds: SoundPrefs;
+  analyses: SavedAnalysis[];
+  lastAnalysisId: string | null;
+};

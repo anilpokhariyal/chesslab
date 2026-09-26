@@ -6,19 +6,26 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check": "node --experimental-strip-types src/lib/classify.test.ts && node --experimental-strip-types src/lib/auth.test.ts && node --experimental-strip-types src/lib/promo.test.ts && node --experimental-strip-types src/lib/outcome.test.ts && node --experimental-strip-types src/lib/sound.test.ts",
+    "postinstall": "mkdir -p public/stockfish && cp node_modules/stockfish/bin/stockfish-19-lite-single.js node_modules/stockfish/bin/stockfish-19-lite-single.wasm public/stockfish/"
   },
   "dependencies": {
+    "chess.js": "^1.4.0",
     "next": "16.3.6",
+    "nodemailer": "^10.0.10",
     "react": "19.2.8",
+    "react-chessboard": "^5.12.1",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "stockfish": "^19.0.0",
     "typescript": "^5"
   }
 }

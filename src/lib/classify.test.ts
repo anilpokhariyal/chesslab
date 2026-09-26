@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import { classifyMove, faultCopy, moveAccuracy } from "./classify.ts";
+
+assert.equal(classifyMove({ cpl: 0, isBest: true, isSacrifice: true }), "brilliant");
+assert.equal(classifyMove({ cpl: 0, isBest: true, isSacrifice: false }), "best");
+assert.equal(classifyMove({ cpl: 8, isBest: false, isSacrifice: false }), "best");
+assert.equal(classifyMove({ cpl: 40, isBest: false, isSacrifice: false }), "good");
+assert.equal(classifyMove({ cpl: 80, isBest: false, isSacrifice: false }), "inaccuracy");
+assert.equal(classifyMove({ cpl: 150, isBest: false, isSacrifice: false }), "mistake");
+assert.equal(classifyMove({ cpl: 400, isBest: false, isSacrifice: false }), "blunder");
+assert.ok(moveAccuracy(0) > 99);
+assert.ok(moveAccuracy(300) < 30);
+const f = faultCopy("Qh4", "e4", "blunder", 400, "Qxe5+", "Qd5");
+assert.match(f.why, /Qh4/);
+assert.match(f.punish, /punish/);
+assert.match(f.punish, /Qxe5/);
+const mild = faultCopy("d4", "e4", "good", 20, "Nf6", "");
+assert.match(mild.why, /first choice/);
+assert.match(mild.punish, /continue/);
+console.log("classify ok");
