@@ -5,10 +5,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Arrow } from "react-chessboard";
 import { chessComGames, lichessGames, type PlatformGame } from "@/lib/api";
 import { analyzeGame, evalPosition, formatScore } from "@/lib/analyze";
-import { getEngine, pvToSan, scoreToWhiteCp, uciToSan } from "@/lib/engine";
+import { fenAfterUci, getEngine, pvToSan, scoreToWhiteCp, uciToSan } from "@/lib/engine";
 import { classifyMove, faultCopy, GRADE_GLYPH, GRADE_LABEL, GRADE_ORDER, nextGradePly, type Grade } from "@/lib/classify";
 import { depthFor, loadProfile, patchProfile, saveAnalysis, useProfile } from "@/lib/store";
 import type { PositionEval, SavedAnalysis, Score } from "@/lib/types";
+import { openingLine, OPENINGS } from "@/lib/openings";
 import { Board } from "./Board";
 import { EvalBar } from "./EvalBar";
 
@@ -39,8 +40,6 @@ function movePts(m?: { evalAfter: Score }, prev?: { evalAfter: Score }) {
 function sameUci(a: string, b: string): boolean {
   return a.slice(0, 4) === b.slice(0, 4);
 }
-const SETUP_PIECES = ["K", "Q", "R", "B", "N", "P", "k", "q", "r", "b", "n", "p"] as const;
-
 function fenFromMap(map: Record<string, string>, turn: "w" | "b"): string {
   const rows = [];
   for (let r = 8; r >= 1; r--) {
@@ -58,7 +57,9 @@ function fenFromMap(map: Record<string, string>, turn: "w" | "b"): string {
     if (empty) row += empty;
     rows.push(row);
   }
-  return `${rows.join("/")} ${turn} - - 0 1`;
+  const body = rows.join("/");
+  if (turn === "w" && body === START.split(" ")[0]) return START;
+  return `${body} ${turn} - - 0 1`;
 }
 
 function mapFromFen(fen: string): Record<string, string> {
@@ -88,6 +89,7 @@ export function Analyzer() {
   const abortRef = useRef<AbortController | null>(null);
   const fullRef = useRef(false);
   const [ply, setPly] = useState(0);
+  const [altPly, setAltPly] = useState<number | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [analysis, setAnalysis] = useState<SavedAnalysis | null>(null);
   const [live, setLive] = useState<PositionEval | null>(null);
@@ -199,6 +201,7 @@ export function Analyzer() {
     }
     const max = g.history().length + history.length;
     const target = Math.max(0, Math.min(max, n));
+    setAltPly(null);
     clearTimeout(playTimer.current);
     setFault(null);
     pendingFault.current = null;
@@ -300,6 +303,20 @@ export function Analyzer() {
 
   const runLive = useCallback(async () => {
     const plan = loadProfile().plan;
+    if (tab === "setup") {
+      try {
+        new Chess(currentFen);
+      } catch {
+        setErr("Need both kings, no pawns on the back rank, and the other side must not already be in check.");
+        return;
+      }
+      setAnalysis(null);
+      setPgn("");
+      setHistory([]);
+      setPly(0);
+      setStartFen(currentFen);
+      setErr("");
+    }
     setBusy("Evaluating…");
     try {
       const ev = await evalPosition(currentFen, Math.min(14, depthFor(plan)));
@@ -311,12 +328,23 @@ export function Analyzer() {
     } finally {
       setBusy("");
     }
-  }, [currentFen]);
+  }, [currentFen, tab]);
 
   const gamePgn = () => {
-    if (pgn) return pgn;
-    const g = new Chess(startFen);
-    for (const san of history) g.move(san);
+    const g = new Chess();
+    try {
+      if (pgn) g.loadPgn(pgn);
+      else g.load(startFen);
+    } catch {
+      /* */
+    }
+    for (const san of history) {
+      try {
+        g.move(san);
+      } catch {
+        break;
+      }
+    }
     return g.pgn();
   };
 
@@ -351,6 +379,8 @@ export function Analyzer() {
 
   const startImported = (mode: "full" | "manual") => {
     if (!ask) return;
+    const handle = (user.trim() || (tab === "lichess" ? profile.lichess : profile.chessCom)).trim().toLowerCase();
+    setFlipped(!!handle && ask.black.toLowerCase() === handle);
     const loaded = loadPgn(ask.pgn);
     setAsk(null);
     if (mode === "full" && loaded) void runFull(loaded);
@@ -363,28 +393,13 @@ export function Analyzer() {
     if (!ask && d.open) d.close();
   }, [ask]);
 
-  const applySetup = () => {
-    const f = fenFromMap(setupMap, setupTurn);
-    try {
-      const g = new Chess(f);
-      setStartFen(g.fen());
-      setPgn("");
-      setHistory([]);
-      setPly(0);
-      setTab("pgn");
-      setAnalysis(null);
-      setLive(null);
-      setFault(null);
-      pendingFault.current = null;
-      setWaitingFault(false);
-      setErr("");
-    } catch {
-      setErr("Illegal setup — both kings required, no checks on the idle king.");
-    }
-  };
-
   const place = (sq: string) => {
-    if (!hold) {
+    if (sq.startsWith("spare:")) {
+      const p = sq.slice(6);
+      setHold((h) => (h === p ? null : p));
+      return;
+    }
+    if (hold === "") {
       setSetupMap((m) => {
         const n = { ...m };
         delete n[sq];
@@ -392,7 +407,51 @@ export function Analyzer() {
       });
       return;
     }
+    if (!hold) return;
     setSetupMap((m) => ({ ...m, [sq]: hold }));
+  };
+
+  const onEdit = (e: { to: string | null; from: string | null; piece: string | null }) => {
+    setSetupMap((m) => {
+      const n = { ...m };
+      if (e.from) delete n[e.from];
+      if (e.to && e.piece) n[e.to] = e.piece;
+      return n;
+    });
+    setHold(null);
+  };
+
+  const loadOpening = (value: string) => {
+    const [id, chapter] = value.split(":");
+    try {
+      const line = openingLine(id, Number(chapter));
+      setFlipped(line.color === "black");
+      setSetupMap(mapFromFen(line.fen));
+      setSetupTurn(line.fen.split(" ")[1] === "b" ? "b" : "w");
+      loadPgn(line.pgn);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not load that opening");
+    }
+  };
+
+  const playFromSetup = () => {
+    const fen = fenFromMap(setupMap, setupTurn);
+    try {
+      const g = new Chess(fen);
+      setStartFen(g.fen());
+      setPgn(g.pgn());
+      setHistory([]);
+      setPly(0);
+      setAnalysis(null);
+      setLive(null);
+      setFault(null);
+      pendingFault.current = null;
+      setWaitingFault(false);
+      setTab("pgn");
+      setErr("");
+    } catch {
+      setErr("Need both kings, no pawns on the back rank, and the other side must not already be in check.");
+    }
   };
 
   const sans = (() => {
@@ -406,7 +465,15 @@ export function Analyzer() {
     return [...g.history(), ...history];
   })();
 
-  const moveAt = analysis?.moves[ply - 1];
+  const moveAt = tab === "setup" ? undefined : analysis?.moves[ply - 1];
+  const tryAlt =
+    moveAt &&
+    (moveAt.grade === "mistake" || moveAt.grade === "blunder") &&
+    moveAt.bestSan &&
+    moveAt.bestUci !== moveAt.uci
+      ? fenAfterUci(moveAt.fenBefore, moveAt.bestUci)
+      : null;
+  const altFen = altPly === ply ? tryAlt : null;
   const tip = live?.fen === currentFen ? live : null;
   const arrows: Arrow[] = [];
   const bestUci = tip?.bestMove ?? "";
@@ -431,15 +498,17 @@ export function Analyzer() {
       <div className="grid-3">
         <section>
           <div className="board-row">
-            <EvalBar score={moveAt?.evalAfter ?? tip?.score} flipped={flipped} />
+            <EvalBar score={altFen ? moveAt?.evalBefore : (moveAt?.evalAfter ?? tip?.score)} flipped={flipped} />
             <Board
-              fen={tab === "setup" && !history.length ? fenFromMap(setupMap, setupTurn) : currentFen}
-              pgn={tab === "setup" ? undefined : gamePgn()}
+              fen={altFen ?? (tab === "setup" && !history.length ? fenFromMap(setupMap, setupTurn) : currentFen)}
+              pgn={altFen || tab === "setup" ? undefined : gamePgn()}
               flipped={flipped}
-              arrows={tab === "setup" ? [] : arrows}
-              allowDrag={tab !== "setup"}
+              arrows={altFen || tab === "setup" ? [] : arrows}
+              allowDrag={tab !== "setup" && !altFen}
               onDrop={onDrop}
               onSquareClick={tab === "setup" ? place : undefined}
+              onEdit={tab === "setup" ? onEdit : undefined}
+              held={hold}
               announce={tab !== "setup"}
             />
           </div>
@@ -476,6 +545,24 @@ export function Analyzer() {
               Clear
             </button>
           </div>
+          {tryAlt && moveAt && (
+            <div className="row" style={{ marginTop: 8 }}>
+              {altFen ? (
+                <>
+                  <span>
+                    {moveAt.bestSan} instead of {moveAt.san}. About {moveAt.cpl}cp better for {moveAt.color === "w" ? "White" : "Black"} — White&apos;s eval stays {formatScore(moveAt.evalBefore)} instead of {formatScore(moveAt.evalAfter)}.
+                  </span>
+                  <button type="button" className="btn" onClick={() => setAltPly(null)}>
+                    Back to {moveAt.san}
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="btn btn-primary" onClick={() => setAltPly(ply)}>
+                  See {moveAt.bestSan} instead
+                </button>
+              )}
+            </div>
+          )}
           <p className="muted" style={{ marginTop: 8 }}>
             {headers.white} — {headers.black} {headers.result}
             {busy && ` · ${busy}`}
@@ -530,26 +617,36 @@ export function Analyzer() {
           )}
           {tab === "setup" && (
             <>
-              <p className="muted">Pick a piece, click a square. Click empty with no piece selected to clear.</p>
-              <div className="palette" style={{ margin: "8px 0" }}>
-                {SETUP_PIECES.map((p) => (
-                  <button key={p} className={`btn ${hold === p ? "btn-primary" : ""}`} onClick={() => setHold(p)}>
-                    {p}
-                  </button>
+              <p className="muted">Load a known opening to study the middlegame, or drag pieces onto squares.</p>
+              <select aria-label="Load a known opening" defaultValue="" onChange={(e) => { if (e.target.value) loadOpening(e.target.value); e.target.value = ""; }} style={{ marginTop: 8 }}>
+                <option value="">Load a known opening…</option>
+                {OPENINGS.map((o) => (
+                  <optgroup key={o.id} label={o.name}>
+                    {o.chapters.map((c, i) => (
+                      <option key={c.name} value={`${o.id}:${i}`}>{c.name}</option>
+                    ))}
+                  </optgroup>
                 ))}
-              </div>
-              <div className="row">
-                <button className="btn" onClick={() => setSetupTurn((t) => (t === "w" ? "b" : "w"))}>
-                  Side: {setupTurn === "w" ? "White" : "Black"}
+              </select>
+              <div className="row" style={{ marginTop: 8 }}>
+                <button type="button" className={`btn${hold === "" ? " btn-primary" : ""}`} onClick={() => setHold((h) => (h === "" ? null : ""))}>
+                  Erase
                 </button>
-                <button className="btn" onClick={() => setSetupMap(mapFromFen(START))}>
-                  Start pos
+                <span className="muted">To move</span>
+                <button type="button" className={`btn${setupTurn === "w" ? " btn-primary" : ""}`} onClick={() => setSetupTurn("w")}>
+                  White
                 </button>
-                <button className="btn" onClick={() => setSetupMap({})}>
-                  Empty
+                <button type="button" className={`btn${setupTurn === "b" ? " btn-primary" : ""}`} onClick={() => setSetupTurn("b")}>
+                  Black
                 </button>
-                <button className="btn btn-primary" onClick={applySetup}>
-                  Use position
+                <button type="button" className="btn" onClick={() => { setSetupMap(mapFromFen(START)); setErr(""); }}>
+                  Start
+                </button>
+                <button type="button" className="btn" onClick={() => { setSetupMap({}); setErr(""); }}>
+                  Clear
+                </button>
+                <button type="button" className="btn btn-primary" onClick={playFromSetup}>
+                  Play from here
                 </button>
               </div>
             </>
@@ -565,6 +662,10 @@ export function Analyzer() {
               </span>
             ))}
           </p>
+          {tab === "setup" ? (
+            <p className="muted">Set the position, then Play from here. Moves after that are the game you analyze.</p>
+          ) : (
+            <>
           {analysis && (
             <div className="row" style={{ margin: "8px 0", flexWrap: "wrap" }}>
               {GRADE_ORDER.filter((g) => counts[g]).map((g) => (
@@ -606,6 +707,8 @@ export function Analyzer() {
               );
             })}
           </div>
+            </>
+          )}
         </section>
 
         <section className="panel">
@@ -652,7 +755,9 @@ export function Analyzer() {
             </p>
           ))}
           <h2 style={{ marginTop: 12 }}>Accuracy</h2>
-          {analysis ? (
+          {tab === "setup" ? (
+            <p className="muted">This is one position, so there is no game accuracy. The best move is above.</p>
+          ) : analysis ? (
             <>
               <div className="stat">
                 <span>White</span>
@@ -668,7 +773,9 @@ export function Analyzer() {
             <p className="muted">Run full analysis to see accuracy.</p>
           )}
           <h2 style={{ marginTop: 12 }}>Summary</h2>
-          {analysis ? (
+          {tab === "setup" ? (
+            <p className="muted">Grades show up after you analyze a played game.</p>
+          ) : analysis ? (
             <div className="row" style={{ flexWrap: "wrap" }}>
               {GRADE_ORDER.filter((g) => counts[g]).map((g) => (
                 <button key={g} className={`btn grade ${g}`} title={GRADE_LABEL[g]} onClick={() => jumpGrade(g)}>

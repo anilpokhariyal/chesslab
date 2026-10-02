@@ -6,6 +6,7 @@ import {
   normalizeUci,
   pvToSan,
   scoreToWhiteCp,
+  fenAfterUci,
   uciToSan,
 } from "./engine.ts";
 
@@ -30,6 +31,9 @@ assert.equal(uciToSan(start, ""), "");
 assert.equal(uciToSan(start, "(none)"), "");
 assert.equal(uciToSan(start, "e2e5"), "e2e5");
 assert.equal(uciToSan("not-a-fen", "e2e4"), "e2e4");
+assert.ok(fenAfterUci(start, "e2e4")?.includes("4P3"));
+assert.equal(fenAfterUci(start, "e2e5"), null);
+assert.equal(fenAfterUci(start, ""), null);
 assert.equal(isCaptureSacrifice(start, "e2e4"), false);
 assert.equal(isCaptureSacrifice("not-a-fen", "e2e4"), false);
 assert.equal(isCaptureSacrifice("4k3/8/8/3p4/8/8/8/3QK3 w - - 0 1", "d1d5"), true);

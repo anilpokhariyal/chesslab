@@ -1,6 +1,6 @@
 "use client";
 
-import { Chessboard } from "react-chessboard";
+import { Chessboard, ChessboardProvider, SparePiece } from "react-chessboard";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { outcome, type Outcome } from "@/lib/outcome";
 import { needsPromo, type PromoPiece } from "@/lib/promo";
@@ -17,9 +17,18 @@ type Props = {
   allowDrag?: boolean;
   onDrop?: (from: string, to: string, promotion?: PromoPiece) => boolean;
   onSquareClick?: (square: string) => void;
+  onEdit?: (e: { to: string | null; from: string | null; piece: string | null }) => void;
+  held?: string | null;
   squareStyles?: Record<string, React.CSSProperties>;
   announce?: boolean;
 };
+
+const TRAY = ["K", "Q", "R", "B", "N", "P"] as const;
+
+function fenChar(pieceType: string): string {
+  const k = pieceType.slice(1);
+  return pieceType.startsWith("w") ? k : k.toLowerCase();
+}
 
 const PROMO: { id: PromoPiece; w: string; b: string }[] = [
   { id: "q", w: "♕", b: "♛" },
@@ -40,6 +49,8 @@ export function Board({
   allowDrag = true,
   onDrop,
   onSquareClick,
+  onEdit,
+  held,
   squareStyles,
   announce,
 }: Props) {
@@ -56,13 +67,11 @@ export function Board({
   const seen = useRef<string | null>(null);
   useEffect(() => {
     if (!announce) return;
-    if (seen.current === null) {
-      seen.current = fen;
-      return;
-    }
     if (seen.current === fen) return;
+    const first = seen.current === null;
     seen.current = fen;
     const o = outcome(fen, pgn);
+    if (first && !o) return;
     setFlash(o);
     if (o?.kind !== "check") return;
     const t = setTimeout(() => setFlash((f) => (f?.kind === "check" ? null : f)), 1600);
@@ -92,59 +101,70 @@ export function Board({
   };
   if (!mounted) return <div className="board-wrap" style={{ aspectRatio: "1" }} />;
 
-  return (
-    <div>
-      <div
-        className="board-wrap"
-        data-pick={pick ?? ""}
-        onClickCapture={(e) => {
-          const sq = (e.target as HTMLElement).closest("[data-square]")?.getAttribute("data-square");
-          if (!sq) return;
-          if (onSquareClick) {
-            onSquareClick(sq);
-            return;
-          }
-          if (!onDrop || !allowDrag) return;
-          if (!pick) {
-            setPick(sq);
-            return;
-          }
-          if (pick === sq) {
-            setPick(null);
-            return;
-          }
-          tryMove(pick, sq);
+  const options = {
+    id: "main",
+    position: fen,
+    boardOrientation: (flipped ? "black" : "white") as "black" | "white",
+    allowDragging: allowDrag || !!onEdit,
+    allowDragOffBoard: !!onEdit,
+    arrows: arrows ?? [],
+    squareStyles: pick ? { ...squareStyles, [pick]: { ...squareStyles?.[pick], boxShadow: "inset 0 0 0 3px #e8c32d" } } : squareStyles,
+    lightSquareStyle: { backgroundColor: theme.light },
+    darkSquareStyle: { backgroundColor: theme.dark },
+    boardStyle: { width: "100%", borderRadius: 4, overflow: "hidden" },
+    onPieceClick: onEdit
+      ? ({ isSparePiece, piece }: { isSparePiece: boolean; piece: { pieceType: string } }) => {
+          if (isSparePiece) onSquareClick?.(`spare:${fenChar(piece.pieceType)}`);
+        }
+      : undefined,
+    onPieceDrop: ({ piece, sourceSquare, targetSquare }: PieceDropHandlerArgs) => {
+      if (onEdit) {
+        if (piece.isSparePiece) {
+          if (!targetSquare) return false;
+          onEdit({ to: targetSquare, from: null, piece: fenChar(piece.pieceType) });
+          return true;
+        }
+        if (!targetSquare) {
+          onEdit({ to: null, from: sourceSquare, piece: null });
+          return true;
+        }
+        onEdit({ to: targetSquare, from: sourceSquare, piece: fenChar(piece.pieceType) });
+        return true;
+      }
+      if (!onDrop || !targetSquare) return false;
+      if (needsPromo(fen, sourceSquare, targetSquare)) {
+        setPending({ from: sourceSquare, to: targetSquare, color: fen.split(" ")[1] as "w" | "b" });
+        return false;
+      }
+      return onDrop(sourceSquare, targetSquare);
+    },
+  };
+
+  const frame = (
+    <div
+      className="board-wrap"
+      data-pick={pick ?? ""}
+      onClickCapture={(e) => {
+        const sq = (e.target as HTMLElement).closest("[data-square]")?.getAttribute("data-square");
+        if (!sq) return;
+        if (onSquareClick) {
+          onSquareClick(sq);
+          return;
+        }
+        if (!onDrop || !allowDrag) return;
+        if (!pick) {
+          setPick(sq);
+          return;
+        }
+        if (pick === sq) {
           setPick(null);
-        }}
-      >
-        <Chessboard
-          options={{
-            id: "main",
-            position: fen,
-            boardOrientation: flipped ? "black" : "white",
-            allowDragging: allowDrag,
-            arrows: arrows ?? [],
-            squareStyles: pick ? { ...squareStyles, [pick]: { ...squareStyles?.[pick], boxShadow: "inset 0 0 0 3px #e8c32d" } } : squareStyles,
-            lightSquareStyle: { backgroundColor: theme.light },
-            darkSquareStyle: { backgroundColor: theme.dark },
-            boardStyle: { width: "100%", borderRadius: 4, overflow: "hidden" },
-            onPieceDrop: onDrop
-              ? ({ sourceSquare, targetSquare }: PieceDropHandlerArgs) => {
-                  if (!targetSquare) return false;
-                  if (needsPromo(fen, sourceSquare, targetSquare)) {
-                    setPending({ from: sourceSquare, to: targetSquare, color: fen.split(" ")[1] as "w" | "b" });
-                    return false;
-                  }
-                  return onDrop(sourceSquare, targetSquare);
-                }
-              : undefined,
-          }}
-        />
-        {flash && (
-          <div className={`flash ${flash.kind}`} onClick={() => flash.kind === "end" && setFlash(null)}>
-            <b>{flash.text}</b>
-          </div>
-        )}
+          return;
+        }
+        tryMove(pick, sq);
+        setPick(null);
+      }}
+    >
+      {onEdit ? <Chessboard /> : <Chessboard options={options} />}
         {pending && (
           <div className="promo" onClick={() => setPending(null)}>
             {PROMO.map((p) => (
@@ -164,6 +184,60 @@ export function Board({
           </div>
         )}
       </div>
+  );
+
+  const tray = (color: "w" | "b") => (
+    <div className="tray" aria-label={color === "w" ? "White pieces" : "Black pieces"}>
+      {TRAY.map((p) => {
+        const ch = color === "w" ? p : p.toLowerCase();
+        return (
+          <div
+            key={ch}
+            className={`${color}${held === ch ? " on" : ""}`}
+            onPointerDown={(e) => {
+              (e.currentTarget as HTMLDivElement).dataset.x = String(e.clientX);
+              (e.currentTarget as HTMLDivElement).dataset.y = String(e.clientY);
+            }}
+            onPointerUp={(e) => {
+              const el = e.currentTarget as HTMLDivElement;
+              const dx = e.clientX - Number(el.dataset.x || 0);
+              const dy = e.clientY - Number(el.dataset.y || 0);
+              if (dx * dx + dy * dy < 36) onSquareClick?.(`spare:${ch}`);
+            }}
+          >
+            <SparePiece pieceType={`${color}${p}`} />
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <div>
+      {onEdit ? (
+        <ChessboardProvider options={options}>
+          <div className="setup-board">
+            {frame}
+            <div className="trays">
+              <div>
+                <p className="muted">White</p>
+                {tray("w")}
+              </div>
+              <div>
+                <p className="muted">Black</p>
+                {tray("b")}
+              </div>
+            </div>
+          </div>
+        </ChessboardProvider>
+      ) : (
+        frame
+      )}
+      {flash && (
+        <p className={`flash ${flash.kind}`} role="status" onClick={() => flash.kind === "end" && setFlash(null)}>
+          <b>{flash.text}</b>
+        </p>
+      )}
       <div className="row" style={{ justifyContent: "center", marginTop: 6 }}>
         {THEMES.filter((t) => !t.premium).map((t) => (
           <button

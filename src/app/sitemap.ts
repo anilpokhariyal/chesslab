@@ -5,7 +5,6 @@ import { siteUrl } from "@/lib/seo";
 const PUBLIC = [
   "/",
   "/about",
-  "/pricing",
   "/puzzles",
   "/puzzles/daily",
   "/puzzles/second-nature",

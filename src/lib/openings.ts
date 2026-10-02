@@ -1,3 +1,5 @@
+import { Chess } from "chess.js";
+
 export type Opening = {
   id: string;
   name: string;
@@ -97,3 +99,18 @@ export const OPENINGS: Opening[] = [
     ],
   },
 ];
+
+/** PGN of a catalog line, ready to analyze from the resulting position. */
+export function openingLine(id: string, chapter: number): { pgn: string; fen: string; color: "white" | "black" } {
+  const opening = OPENINGS.find((o) => o.id === id);
+  const line = opening?.chapters[chapter];
+  if (!opening || !line) throw new Error("Unknown opening");
+  const g = new Chess();
+  for (const san of line.moves) {
+    if (!g.move(san)) throw new Error(`Illegal move ${san} in ${opening.name}`);
+  }
+  g.setHeader("Event", `${opening.name}: ${line.name}`);
+  g.setHeader("White", opening.color === "white" ? "You" : "White");
+  g.setHeader("Black", opening.color === "black" ? "You" : "Black");
+  return { pgn: g.pgn(), fen: g.fen(), color: opening.color };
+}

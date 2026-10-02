@@ -84,7 +84,6 @@ export function Nav({ user }: { user: User | null }) {
             </div>
           )}
         </div>
-        <Link href="/pricing">Pricing</Link>
         <Link href="/about">About</Link>
       </div>
       <div className="nav-right">

@@ -5,7 +5,8 @@ import { answer, botPlan, explainMove, sideCpl, summarize } from "./coach.ts";
 import { jsonLd, meta, PassThrough, SITE, siteUrl } from "./seo.ts";
 import { emailConfig, emailReady } from "./email-config.ts";
 import { themeById, THEMES } from "./themes.ts";
-import { OPENINGS } from "./openings.ts";
+import { Chess } from "chess.js";
+import { OPENINGS, openingLine } from "./openings.ts";
 import { cloneGame, loadGame, outcome } from "./outcome.ts";
 import { needsPromo } from "./promo.ts";
 import { isFreshProfile, parseProfile } from "./profile.ts";
@@ -132,6 +133,16 @@ assert.equal(themeById("marble").premium, true);
 assert.equal(themeById("nope").id, "default");
 assert.ok(THEMES.length >= 4);
 assert.ok(OPENINGS.some((o) => o.id === "sicilian"));
+for (const o of OPENINGS) {
+  o.chapters.forEach((_, i) => {
+    const line = openingLine(o.id, i);
+    const g = new Chess();
+    g.loadPgn(line.pgn);
+    assert.equal(g.fen(), line.fen);
+    assert.ok(g.history().length >= 8);
+  });
+}
+assert.throws(() => openingLine("nope", 0));
 
 assert.equal(loadGame(undefined, "not-a-fen").fen().startsWith("rnbqkbnr"), true);
 assert.equal(loadGame("not-pgn", "not-a-fen").fen().startsWith("rnbqkbnr"), true);

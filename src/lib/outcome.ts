@@ -26,9 +26,35 @@ export function cloneGame(g: Chess): Chess {
   return loadGame(g.pgn(), g.fen());
 }
 
-export function outcome(fen: string, pgn?: string): Outcome | null {
+/** Position at `fen`. PGN is only the history up to that ply, so a later mate does not leak backward. */
+function gameAt(fen: string, pgn?: string): Chess | null {
+  if (pgn) {
+    try {
+      const full = new Chess();
+      full.loadPgn(pgn);
+      if (full.fen() === fen) return full;
+      const moves = full.history({ verbose: true });
+      const replay = new Chess(moves[0]?.before);
+      if (replay.fen() === fen) return replay;
+      for (const m of moves) {
+        replay.move(m.san);
+        if (replay.fen() === fen) return replay;
+      }
+    } catch {
+      /* fen */
+    }
+  }
   try {
-    const g = loadGame(pgn, fen);
+    return new Chess(fen);
+  } catch {
+    return null;
+  }
+}
+
+export function outcome(fen: string, pgn?: string): Outcome | null {
+  const g = gameAt(fen, pgn);
+  if (!g) return null;
+  try {
     if (g.isCheckmate()) return { kind: "end", text: "Checkmate" };
     if (g.isStalemate()) return { kind: "end", text: "Stalemate" };
     if (g.isThreefoldRepetition()) return { kind: "end", text: "Draw by repetition" };

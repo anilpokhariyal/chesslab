@@ -194,6 +194,22 @@ export function uciToSan(fen: string, uci: string): string {
   }
 }
 
+export function fenAfterUci(fen: string, uci: string): string | null {
+  if (!uci || uci === "(none)") return null;
+  const u = normalizeUci(uci);
+  try {
+    const g = new Chess(fen);
+    const move = g.move({
+      from: u.slice(0, 2),
+      to: u.slice(2, 4),
+      promotion: u[4] as "q" | "r" | "b" | "n" | undefined,
+    });
+    return move ? g.fen() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function isCaptureSacrifice(fen: string, uci: string): boolean {
   try {
     const g = new Chess(fen);
