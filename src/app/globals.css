@@ -253,11 +253,12 @@ dialog.ask h2 { font-size: 1.15rem; margin-bottom: 8px; }
 .progress > i { display: block; height: 100%; background: var(--accent); }
 
 .setup-board { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.setup-board .board-wrap { width: min(100%, calc(100dvh - 450px)); }
 .trays { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
 .tray { display: flex; gap: 4px; }
 .tray > div { width: 40px; height: 40px; border-radius: 6px; }
 .tray .w { background: #f4efe4; }
-.tray .b { background: #121820; }
+.tray .b { background: #fff; }
 .tray .on { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .auth label { display: block; margin-bottom: 10px; color: var(--muted); font-size: 0.9rem; }
