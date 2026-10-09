@@ -2,20 +2,11 @@
 
 import { Chess } from "chess.js";
 import { useEffect, useState } from "react";
-import { fetchPuzzle, type LichessPuzzle } from "@/lib/api";
+import { fetchPuzzle, puzzleStart, type LichessPuzzle } from "@/lib/api";
 import { useProfile } from "@/lib/store";
 import { Board } from "@/components/Board";
 
 type Item = LichessPuzzle & { clean: number };
-
-function startFen(p: LichessPuzzle): string {
-  const g = new Chess();
-  g.loadPgn(p.pgn);
-  const all = g.history();
-  const replay = new Chess();
-  for (let i = 0; i < Math.min(p.initialPly, all.length); i++) replay.move(all[i]);
-  return replay.fen();
-}
 
 export default function Page() {
   const [set, setSet] = useState<Item[]>([]);
@@ -35,7 +26,7 @@ export default function Page() {
       }
       setSet(items);
       setI(0);
-      setFen(startFen(items[0]));
+      setFen(puzzleStart(items[0]).fen);
       setStep(0);
       setMsg("Hit each puzzle clean twice.");
     } catch (e) {
@@ -55,7 +46,7 @@ export default function Page() {
         if (gone || !items[0]) return;
         setSet(items);
         setI(0);
-        setFen(startFen(items[0]));
+        setFen(puzzleStart(items[0]).fen);
         setStep(0);
         setMsg("Hit each puzzle clean twice.");
       } catch (e) {
@@ -75,7 +66,7 @@ export default function Page() {
     if (uci !== need && `${from}${to}` !== need) {
       setMsg("Miss — reset this one.");
       setSet((xs) => xs.map((x, idx) => (idx === i ? { ...x, clean: 0 } : x)));
-      setFen(startFen(cur));
+      setFen(puzzleStart(cur).fen);
       setStep(0);
       return false;
     }
@@ -99,7 +90,7 @@ export default function Page() {
       const nextI = updated.findIndex((x, idx) => idx > i && x.clean < 2);
       const j = nextI === -1 ? updated.findIndex((x) => x.clean < 2) : nextI;
       setI(j);
-      setFen(startFen(updated[j]));
+      setFen(puzzleStart(updated[j]).fen);
       setStep(0);
       setMsg(`Clean. Puzzle ${j + 1}/${updated.length}.`);
     }

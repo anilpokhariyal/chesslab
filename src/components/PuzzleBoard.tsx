@@ -2,19 +2,11 @@
 
 import { Chess } from "chess.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchDailyPuzzle, fetchPuzzle, type LichessPuzzle } from "@/lib/api";
+import { fetchDailyPuzzle, fetchPuzzle, puzzleStart, type LichessPuzzle } from "@/lib/api";
 import { loadProfile, patchProfile, updateRating } from "@/lib/store";
 import { Board } from "./Board";
 
-function startPuzzle(p: LichessPuzzle): { fen: string; color: "w" | "b" } {
-  const g = new Chess();
-  g.loadPgn(p.pgn);
-  const all = g.history();
-  const replay = new Chess();
-  const to = Math.min(p.initialPly, all.length);
-  for (let i = 0; i < to; i++) replay.move(all[i]);
-  return { fen: replay.fen(), color: replay.turn() };
-}
+const PIECE: Record<string, string> = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
 
 export function PuzzleBoard({
   angle,
@@ -34,7 +26,11 @@ export function PuzzleBoard({
   const [hints, setHints] = useState(0);
   const [left, setLeft] = useState(timed ?? 0);
   const [err, setErr] = useState("");
+  const [miss, setMiss] = useState<string | null>(null);
+  const [bad, setBad] = useState<string | null>(null);
+  const [glow, setGlow] = useState<string[]>([]);
   const done = useRef(false);
+  const replay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const finish = useCallback(
     (ok: boolean) => {
@@ -56,6 +52,7 @@ export function PuzzleBoard({
   );
 
   const load = useCallback(async () => {
+    clearTimeout(replay.current);
     done.current = true;
     setErr("");
     setMsg("Find the best move.");
@@ -64,7 +61,10 @@ export function PuzzleBoard({
     try {
       const p = daily ? await fetchDailyPuzzle() : await fetchPuzzle(angle);
       setPuzzle(p);
-      setFen(startPuzzle(p).fen);
+      setFen(puzzleStart(p).fen);
+      setMiss(null);
+      setBad(null);
+      setGlow([]);
       setLeft(timed ?? 0);
       done.current = false;
     } catch (e) {
@@ -74,13 +74,17 @@ export function PuzzleBoard({
 
   useEffect(() => {
     let gone = false;
+    clearTimeout(replay.current);
     (async () => {
       try {
         const p = daily ? await fetchDailyPuzzle() : await fetchPuzzle(angle);
         if (gone) return;
         done.current = false;
         setPuzzle(p);
-        setFen(startPuzzle(p).fen);
+        setFen(puzzleStart(p).fen);
+        setMiss(null);
+        setBad(null);
+        setGlow([]);
         setStep(0);
         setHints(0);
         setMsg("Find the best move.");
@@ -111,29 +115,47 @@ export function PuzzleBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restart timer per puzzle id
   }, [timed, puzzle?.id, finish, load]);
 
-  const color = useMemo(() => new Chess(fen).turn(), [fen]);
+  const turn = useMemo(() => new Chess(fen).turn(), [fen]);
 
   const playUci = (from: string, to: string, promotion?: "q" | "r" | "b" | "n") => {
-    if (!puzzle || done.current) return false;
-    const need = puzzle.solution[step];
-    const uci = `${from}${to}${promotion ?? ""}`;
-    if (uci !== need && `${from}${to}` !== need) {
-      setMsg("Not it. Try again.");
+    if (!puzzle || done.current || miss) return false;
+    const g = new Chess(fen);
+    let mv;
+    try {
+      mv = g.move({ from, to, promotion: promotion ?? "q" });
+    } catch {
       return false;
     }
-    const g = new Chess(fen);
-    const mv = g.move({ from, to, promotion: promotion ?? "q" });
     if (!mv) return false;
+    const need = puzzle.solution[step];
+    const played = `${from}${to}${mv.promotion ?? ""}`;
+    if (played !== need && `${from}${to}` !== need) {
+      setMiss(g.fen());
+      setBad(to);
+      setGlow([]);
+      setMsg(
+        from === need.slice(0, 2)
+          ? `${mv.san} is the right piece, but not the right square.`
+          : `${mv.san} does not work. The ${PIECE[mv.piece] ?? "piece"} on ${from} is the wrong piece.`,
+      );
+      return true;
+    }
     let nextFen = g.fen();
     let nextStep = step + 1;
     if (puzzle.solution[nextStep]) {
       const reply = puzzle.solution[nextStep];
-      g.move({ from: reply.slice(0, 2), to: reply.slice(2, 4), promotion: (reply[4] as "q") || "q" });
+      g.move({
+        from: reply.slice(0, 2),
+        to: reply.slice(2, 4),
+        ...(reply[4] ? { promotion: reply[4] as "q" | "r" | "b" | "n" } : {}),
+      });
       nextFen = g.fen();
       nextStep += 1;
     }
     setFen(nextFen);
     setStep(nextStep);
+    setBad(null);
+    setGlow([]);
     if (nextStep >= puzzle.solution.length) {
       setMsg("Solved.");
       finish(true);
@@ -143,31 +165,74 @@ export function PuzzleBoard({
 
   const hint = () => {
     if (!puzzle || done.current) return;
+    setMiss(null);
+    setBad(null);
     setHints((h) => h + 1);
-    const u = puzzle.solution[step];
-    setMsg(`Hint: ${u.slice(0, 2)} → …`);
+    setGlow([puzzle.solution[step].slice(0, 2)]);
+    setMsg("Move the highlighted piece.");
   };
 
   const show = () => {
-    if (!puzzle || done.current) return;
-    const g = new Chess(fen);
-    const u = puzzle.solution[step];
-    try {
-      g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: (u[4] as "q") || "q" });
-      setFen(g.fen());
-    } catch {
-      /* */
-    }
-    setMsg(`Solution: ${puzzle.solution.join(" ")}`);
-    finish(false);
+    if (!puzzle) return;
+    clearTimeout(replay.current);
+    if (!done.current) finish(false);
+    setMiss(null);
+    setBad(null);
+    setGlow([]);
+    const g = new Chess(puzzleStart(puzzle).fen);
+    const moves = puzzle.solution;
+    setFen(g.fen());
+    setStep(0);
+    setMsg("");
+    let i = 0;
+    const tick = () => {
+      const u = moves[i];
+      if (!u) {
+        setGlow([]);
+        setMsg("That's the line.");
+        return;
+      }
+      const from = u.slice(0, 2);
+      const to = u.slice(2, 4);
+      try {
+        const mv = g.move({
+          from,
+          to,
+          ...(u[4] ? { promotion: u[4] as "q" | "r" | "b" | "n" } : {}),
+        });
+        setFen(g.fen());
+        setGlow([from, to]);
+        setStep(i + 1);
+        setMsg(mv.san);
+      } catch {
+        setMsg("That's the line.");
+        return;
+      }
+      i += 1;
+      replay.current = setTimeout(tick, 800);
+    };
+    replay.current = setTimeout(tick, 400);
   };
+
+  useEffect(() => () => clearTimeout(replay.current), []);
 
   return (
     <div>
       <div className="row" style={{ marginBottom: 8 }}>
         <span>Rating {puzzle?.rating ?? "—"}</span>
-        <span className="muted">{color === "w" ? "White" : "Black"} to move</span>
         {timed ? <span>{left}s</span> : null}
+        {miss && (
+          <button
+            className="btn"
+            onClick={() => {
+              setMiss(null);
+              setBad(null);
+              setMsg("Find the best move.");
+            }}
+          >
+            Try again
+          </button>
+        )}
         <button className="btn" onClick={() => void load()}>
           Next
         </button>
@@ -179,8 +244,18 @@ export function PuzzleBoard({
         </button>
       </div>
       {err && <p className="grade blunder">{err}</p>}
-      <Board fen={fen} flipped={color === "b"} onDrop={playUci} />
-      <p style={{ marginTop: 8 }}>{msg}</p>
+      <p className={`turn-banner ${turn}`}>{turn === "w" ? "White" : "Black"} to move</p>
+      <Board
+        fen={miss ?? fen}
+        flipped={turn === "b"}
+        onDrop={playUci}
+        allowDrag={!miss}
+        squareStyles={{
+          ...Object.fromEntries(glow.map((sq) => [sq, { backgroundColor: "#f5d76e" }])),
+          ...(bad ? { [bad]: { boxShadow: "inset 0 0 0 4px #e85d4c" } } : {}),
+        }}
+      />
+      <p className={miss ? "turn-why" : ""} style={{ marginTop: 8 }}>{msg}</p>
     </div>
   );
 }

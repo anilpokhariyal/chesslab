@@ -1,3 +1,5 @@
+import { Chess } from "chess.js";
+
 export type PlatformGame = {
   id: string;
   white: string;
@@ -113,6 +115,17 @@ export type LichessPuzzle = {
   pgn: string;
   themes?: string[];
 };
+
+/** Position after the puzzle PGN. Lichess `initialPly` is the move before that, and the solution is not legal there. */
+export function puzzleStart(p: Pick<LichessPuzzle, "pgn">): { fen: string; color: "w" | "b" } {
+  const g = new Chess();
+  try {
+    g.loadPgn(p.pgn);
+  } catch {
+    /* start */
+  }
+  return { fen: g.fen(), color: g.turn() };
+}
 
 export async function fetchPuzzle(angle?: string): Promise<LichessPuzzle> {
   const q = angle ? `?angle=${encodeURIComponent(angle)}` : "";

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Chess } from "chess.js";
 import {
   chessComGames,
   cloudEval,
@@ -6,8 +7,16 @@ import {
   fetchPuzzle,
   lichessGames,
   openingName,
+  puzzleStart,
   resetCloudEval,
 } from "./api.ts";
+
+const end = new Chess();
+end.loadPgn("e4 e5 Nf3");
+const started = puzzleStart({ pgn: "e4 e5 Nf3" });
+assert.equal(started.fen, end.fen());
+assert.equal(started.color, "b");
+assert.equal(puzzleStart({ pgn: "not a game" }).color, "w");
 
 const now = new Date();
 const ym = `${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
