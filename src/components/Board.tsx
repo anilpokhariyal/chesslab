@@ -24,6 +24,14 @@ type Props = {
 };
 
 const TRAY = ["K", "Q", "R", "B", "N", "P"] as const;
+// ponytail: size stays in localStorage; a profile field would need a prisma column
+const BOARD_KEY = "chesslab-board";
+const BOARD_MIN = 240;
+const BOARD_FALLBACK = 680;
+
+function clampBoard(n: number, cap: number): number {
+  return Math.max(BOARD_MIN, Math.min(cap, Math.round(n)));
+}
 
 function fenChar(pieceType: string): string {
   const k = pieceType.slice(1);
@@ -64,7 +72,27 @@ export function Board({
   const [pending, setPending] = useState<{ from: string; to: string; color: "w" | "b" } | null>(null);
   const [pick, setPick] = useState<string | null>(null);
   const [flash, setFlash] = useState<Outcome | null>(null);
+  const [size, setSize] = useState(BOARD_FALLBACK);
+  const wrap = useRef<HTMLDivElement>(null);
   const seen = useRef<string | null>(null);
+  useEffect(() => {
+    const n = Number(localStorage.getItem(BOARD_KEY));
+    const v = n >= BOARD_MIN && n <= 2000 ? n : wrap.current?.offsetWidth ?? BOARD_FALLBACK;
+    setSize(v);
+  }, []);
+  useEffect(() => {
+    const w = wrap.current?.getBoundingClientRect().width;
+    if (w) document.documentElement.style.setProperty("--board-size", `${Math.round(w)}px`);
+  }, [size]);
+  const applySize = (n: number) => {
+    const cap = Math.min(
+      wrap.current?.closest(".board-root")?.clientWidth ?? window.innerWidth,
+      Math.round(window.innerHeight * 0.9),
+    );
+    const v = clampBoard(n, cap);
+    setSize(v);
+    localStorage.setItem(BOARD_KEY, String(v));
+  };
   useEffect(() => {
     if (!announce) return;
     if (seen.current === fen) return;
@@ -111,7 +139,7 @@ export function Board({
     squareStyles: pick ? { ...squareStyles, [pick]: { ...squareStyles?.[pick], boxShadow: "inset 0 0 0 3px #e8c32d" } } : squareStyles,
     lightSquareStyle: { backgroundColor: theme.light },
     darkSquareStyle: { backgroundColor: theme.dark },
-    boardStyle: { width: "100%", borderRadius: 4, overflow: "hidden" },
+    boardStyle: { width: "100%", height: "100%", borderRadius: 4, overflow: "hidden" },
     onPieceClick: onEdit
       ? ({ isSparePiece, piece }: { isSparePiece: boolean; piece: { pieceType: string } }) => {
           if (isSparePiece) onSquareClick?.(`spare:${fenChar(piece.pieceType)}`);
@@ -142,7 +170,9 @@ export function Board({
 
   const frame = (
     <div
+      ref={wrap}
       className="board-wrap"
+      style={{ width: size }}
       data-pick={pick ?? ""}
       onClickCapture={(e) => {
         const sq = (e.target as HTMLElement).closest("[data-square]")?.getAttribute("data-square");
@@ -183,6 +213,24 @@ export function Board({
             ))}
           </div>
         )}
+        <button
+          type="button"
+          className="board-grip"
+          aria-label="Resize board"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const el = wrap.current;
+            if (!el) return;
+            const move = (ev: PointerEvent) => applySize(ev.clientX - el.getBoundingClientRect().left);
+            const up = () => {
+              window.removeEventListener("pointermove", move);
+              window.removeEventListener("pointerup", up);
+            };
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+          }}
+        />
       </div>
   );
 
@@ -213,7 +261,7 @@ export function Board({
   );
 
   return (
-    <div>
+    <div className="board-root">
       {onEdit ? (
         <ChessboardProvider options={options}>
           <div className="setup-board">
@@ -266,6 +314,16 @@ export function Board({
             {k === "end" ? "Mate" : k[0].toUpperCase() + k.slice(1)}
           </button>
         ))}
+        <input
+          type="range"
+          min={BOARD_MIN}
+          max={960}
+          step={10}
+          aria-label="Board size"
+          value={size}
+          onChange={(e) => applySize(Number(e.target.value))}
+          style={{ maxWidth: 100 }}
+        />
         <input
           type="range"
           min={0}
